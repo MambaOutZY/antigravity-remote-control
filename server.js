@@ -1052,6 +1052,26 @@ function createAppServer(options = {}) {
         const body = await readJsonBody(req);
         const fileName = body.fileName || body.file || '';
         const result = await switchBridge.switchAccount(fileName, getSwitchOpts());
+
+        // 账号切换后随响应返回最新模型列表与实时额度限制，供前端瞬间刷新
+        try {
+          const freshModels = await runner.listAvailableModels({ timeoutMs: 3000 });
+          if (Array.isArray(freshModels) && freshModels.length > 0) {
+            result.models = freshModels;
+          }
+        } catch {
+          // 容错降级
+        }
+
+        try {
+          result.usageLimits = meterEngine.getUsageLimits({
+            agDir: options.agDir,
+            agCliDir: options.agCliDir
+          });
+        } catch {
+          // 容错降级
+        }
+
         sendJson(res, 200, result);
         return;
       }

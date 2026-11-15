@@ -1436,12 +1436,38 @@
       showFeedback('account-switch-feedback', okMsg, 'ok');
       showToast(okMsg);
       await loadAccountsSettings();
-      // 刷新可用模型列表与顶栏状态
-      const boot = await apiFetch('/api/bootstrap');
-      if (Array.isArray(boot.models)) {
-        state.models = boot.models;
+
+      // 1. 刷新可用模型列表与原生下拉框
+      if (Array.isArray(res.models) && res.models.length > 0) {
+        state.models = res.models;
         populateControlSelects();
-        updateCliPreview();
+      } else {
+        const boot = await apiFetch('/api/bootstrap');
+        if (Array.isArray(boot.models)) {
+          state.models = boot.models;
+          populateControlSelects();
+        }
+      }
+
+      // 2. 刷新额度看板数据与输入框额度圆环
+      if (res.usageLimits) {
+        state.usageLimits = res.usageLimits;
+        renderUsageLimits(res.usageLimits);
+      } else {
+        await refreshUsageLimits();
+      }
+
+      // 3. 立即刷新输入框左下角模型胶囊、微型额度圆环与快捷模型弹窗
+      updateModelPickerQuotaPill();
+      renderModelSwitcherList();
+      updateCliPreview();
+
+      // 4. 同步刷新顶栏上下文与历史用量统计
+      if (typeof refreshContextWindowStatus === 'function') {
+        refreshContextWindowStatus();
+      }
+      if (typeof loadMeterHistory === 'function') {
+        loadMeterHistory();
       }
     } catch (err) {
       showFeedback('account-switch-feedback', `切换失败：${err.message}`, 'err');
