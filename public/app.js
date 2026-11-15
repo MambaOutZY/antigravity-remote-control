@@ -347,15 +347,22 @@
     return '#';
   }
 
-  /** 将 Markdown 图片 URL 归一化为浏览器可加载地址（自动代理 file:// 与本地路径） */
+  /** 将 Markdown 图片 URL 归一化为浏览器可加载地址（自动代理 file:// 与本地路径，并附带 Token） */
   function resolveMarkdownImageSrc(rawUrl) {
     const trimmed = String(rawUrl || '').trim();
     if (!trimmed) return '';
     if (/^data:image\/(?:png|jpeg|jpg|gif|webp|bmp);base64,/i.test(trimmed)) return trimmed;
-    if (trimmed.startsWith('/api/uploads/') || trimmed.startsWith('/api/local-image')) return trimmed;
+    const token = localStorage.getItem('agy_token');
+    const tokenQuery = token ? `&token=${encodeURIComponent(token)}` : '';
+    if (trimmed.startsWith('/api/uploads/')) {
+      return token ? `${trimmed}${trimmed.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : trimmed;
+    }
+    if (trimmed.startsWith('/api/local-image')) {
+      return token ? `${trimmed}${trimmed.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : trimmed;
+    }
     if (/^https?:\/\//i.test(trimmed)) return trimmed;
     if (trimmed.startsWith('file://') || /^\/(?:home|Users|tmp|var|opt|mnt)\//.test(trimmed) || /^[a-zA-Z]:[\\/]/.test(trimmed)) {
-      return `/api/local-image?path=${encodeURIComponent(trimmed)}`;
+      return `/api/local-image?path=${encodeURIComponent(trimmed)}${tokenQuery}`;
     }
     if (trimmed.startsWith('/')) return trimmed;
     return '';
@@ -365,24 +372,79 @@
   function renderInlineMarkdown(rawText) {
     const codeSlots = [];
     // 先提取行内代码防止内部符号被二次解析
-    const withPlaceholders = String(rawText || '').replace(/`([^`\n]+)`/g, (_, code) => {
+    let text = String(rawText || '').replace(/`([^`\n]+)`/g, (_, code) => {
       const idx = codeSlots.length;
       codeSlots.push(`<code class="inline-code">${escapeHtml(code)}</code>`);
       return `\u0000CODE${idx}\u0000`;
     });
 
     const imgSlots = [];
-    const withImgPlaceholders = withPlaceholders.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (full, alt, url) => {
-      const src = resolveMarkdownImageSrc(url);
-      if (!src) return full;
+
+    // 0. 特殊处理：提示词中的 [附件图片: /path/to/img.png ...] 结构化展示
+    text = text.replace(/\[附件图片:\s*([^\s\r\n\]]+)(?:[^\r\n\]]*?)\]/gi, (full, imgPath) => {
+      const src = resolveMarkdownImageSrc(imgPath);
+      const fileName = imgPath.split(/[\\/]/).pop() || '附件图片';
+      if (!src) return `<span class="md-att-tag">📎 附件图片: ${escapeHtml(fileName)}</span>`;
       const idx = imgSlots.length;
-      imgSlots.push(`<img class="md-inline-img" src="${escapeHtml(src)}" alt="${escapeHtml(alt || '生成图片')}" loading="lazy" />`);
+      imgSlots.push(`
+        <div class="md-auto-img-card" data-lightbox-src="${escapeHtml(src)}" data-lightbox-caption="${escapeHtml(fileName)}">
+          <div class="md-auto-img-title"><span class="md-att-tag">📎 附件图片</span><span class="md-auto-img-path">${escapeHtml(fileName)}</span></div>
+          <div class="md-auto-img-preview">
+            <img class="md-inline-img" src="${escapeHtml(src)}" alt="${escapeHtml(fileName)}" loading="lazy" />
+          </div>
+        </div>
+      `);
       return `\u0000IMG${idx}\u0000`;
     });
 
-    let safe = escapeHtml(withImgPlaceholders);
-    safe = safe.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, url) => {
+    // 0.5 特殊处理：落盘清单中的 存储路径 / 落盘路径 / 输出路径: /path/to/img.jpg
+    text = text.replace(/(存储路径|落盘路径|生成图片|输出图片|文件路径)[:：]\s*([^\s\r\n)\]'"]+?\.(?:png|jpe?g|gif|webp|bmp|svg))/gi, (full, label, imgPath) => {
+      const src = resolveMarkdownImageSrc(imgPath);
+      const fileName = imgPath.split(/[\\/]/).pop() || '生成图片';
+      if (!src) return full;
+      const idx = imgSlots.length;
+      imgSlots.push(`
+        <div class="md-auto-img-card" data-lightbox-src="${escapeHtml(src)}" data-lightbox-caption="${escapeHtml(fileName)}">
+          <div class="md-auto-img-title">🖼️ ${escapeHtml(label)}: <span class="md-auto-img-path">${escapeHtml(imgPath)}</span></div>
+          <div class="md-auto-img-preview">
+            <img class="md-inline-img is-block" src="${escapeHtml(src)}" alt="${escapeHtml(fileName)}" loading="lazy" />
+          </div>
+        </div>
+      `);
+      return `\u0000IMG${idx}\u0000`;
+    });
+
+    // 1. 显式 Markdown 图片语法：![alt](url)
+    text = text.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (full, alt, url) => {
+      const src = resolveMarkdownImageSrc(url);
+      if (!src) return full;
+      const idx = imgSlots.length;
+      imgSlots.push(`
+        <div class="md-auto-img-card" data-lightbox-src="${escapeHtml(src)}" data-lightbox-caption="${escapeHtml(alt || '生成图片')}">
+          <img class="md-inline-img" src="${escapeHtml(src)}" alt="${escapeHtml(alt || '生成图片')}" loading="lazy" />
+        </div>
+      `);
+      return `\u0000IMG${idx}\u0000`;
+    });
+
+    let safe = escapeHtml(text);
+    // 2. 超链接解析：若链接目标或文字明显是图片文件（如 .jpg / .png），在超链接后附带行内预览图
+    safe = safe.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (full, label, url) => {
       const href = escapeHtml(sanitizeHref(url));
+      const isImgTarget = /\.(?:png|jpe?g|gif|webp|bmp|svg)(?:\?.*)?$/i.test(url) || /\.(?:png|jpe?g|gif|webp|bmp|svg)$/i.test(label);
+      if (isImgTarget) {
+        const imgSrc = resolveMarkdownImageSrc(url);
+        if (imgSrc) {
+          const idx = imgSlots.length;
+          imgSlots.push(`
+            <span class="md-link-img-wrap" data-lightbox-src="${escapeHtml(imgSrc)}" data-lightbox-caption="${escapeHtml(label)}">
+              <a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>
+              <img class="md-inline-img" src="${escapeHtml(imgSrc)}" alt="${escapeHtml(label)}" loading="lazy" />
+            </span>
+          `);
+          return `\u0000IMG${idx}\u0000`;
+        }
+      }
       return `<a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>`;
     });
     safe = safe.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -2806,27 +2868,7 @@
       contentDiv.className = 'md-body';
       contentDiv.innerHTML = renderMarkdown(msg.text || '');
       bubble.appendChild(contentDiv);
-
-      if (msg.attachments && msg.attachments.length) {
-        const attWrap = document.createElement('div');
-        attWrap.className = 'msg-attachments';
-        msg.attachments.forEach((att) => {
-          const srcUrl = att.url || '';
-          const card = document.createElement('div');
-          card.className = 'msg-thumb-card';
-          if (srcUrl) {
-            card.dataset.lightboxSrc = srcUrl;
-            card.dataset.lightboxCaption = `${att.name || '图片'} (${att.dimensions || ''})`;
-          }
-          const thumbVisual = srcUrl
-            ? `<img src="${escapeHtml(srcUrl)}" alt="${escapeHtml(att.name || '图片')}" loading="lazy" />`
-            : `<div class="msg-thumb-placeholder" title="${escapeHtml(att.path || att.uri || '')}">📎</div>`;
-          const dimText = att.dimensions ? ` · ${att.dimensions}` : '';
-          card.innerHTML = `${thumbVisual}<div class="msg-thumb-meta">${escapeHtml(att.name || '附件')}${escapeHtml(dimText)}</div>`;
-          attWrap.appendChild(card);
-        });
-        bubble.appendChild(attWrap);
-      }
+      renderMessageAttachmentsDom(bubble, msg);
     } else if (msg.role === 'error') {
       const errDiv = document.createElement('div');
       errDiv.className = 'md-body';
@@ -2846,7 +2888,36 @@
     return row;
   }
 
-  /** 原地更新助手消息卡片（思考折叠区、工具调用卡片、Markdown 正文、指标条） */
+  /** 为气泡渲染媒体附件网格（聚合 msg.attachments 与 msg.media，支持点击大图预览） */
+  function renderMessageAttachmentsDom(bubble, msg) {
+    const mediaItems = [];
+    if (Array.isArray(msg.attachments)) mediaItems.push(...msg.attachments);
+    if (Array.isArray(msg.media)) mediaItems.push(...msg.media);
+    if (!mediaItems.length) return;
+
+    const attWrap = document.createElement('div');
+    attWrap.className = 'msg-attachments';
+    mediaItems.forEach((att) => {
+      const rawUrl = att.url || att.path || att.uri || '';
+      const srcUrl = resolveMarkdownImageSrc(rawUrl);
+      const isImg = /\.(?:png|jpe?g|gif|webp|bmp|svg)(?:\?.*)?$/i.test(rawUrl) || /^image\//i.test(att.mime || '');
+      const card = document.createElement('div');
+      card.className = 'msg-thumb-card';
+      if (srcUrl && isImg) {
+        card.dataset.lightboxSrc = srcUrl;
+        card.dataset.lightboxCaption = `${att.name || '图片'}${att.dimensions ? ' (' + att.dimensions + ')' : ''}`;
+      }
+      const thumbVisual = (srcUrl && isImg)
+        ? `<img src="${escapeHtml(srcUrl)}" alt="${escapeHtml(att.name || '图片')}" loading="lazy" />`
+        : `<div class="msg-thumb-placeholder" title="${escapeHtml(rawUrl)}">📎</div>`;
+      const dimText = att.dimensions ? ` · ${att.dimensions}` : '';
+      card.innerHTML = `${thumbVisual}<div class="msg-thumb-meta">${escapeHtml(att.name || '附件')}${escapeHtml(dimText)}</div>`;
+      attWrap.appendChild(card);
+    });
+    bubble.appendChild(attWrap);
+  }
+
+  /** 原地更新助手消息卡片（思考折叠区、工具调用卡片、Markdown 正文、媒体卡片、指标条） */
   function updateAssistantBubbleDom(bubble, msg) {
     bubble.innerHTML = '';
 
@@ -2902,6 +2973,9 @@
       mdDiv.innerHTML = '<span class="card-sub">正在等待模型响应流…</span>';
     }
     bubble.appendChild(mdDiv);
+
+    // 3.5 助手生成的落盘媒体 / 附件展示
+    renderMessageAttachmentsDom(bubble, msg);
 
     // 4. 底部实时耗时 / TTFT / TPS 指标条
     if (msg.metrics) {
@@ -4180,22 +4254,29 @@
     }
     if (state.contextMenuConvId) {
       state.contextMenuConvId = null;
-      renderConversationList();
+      document.querySelectorAll('.conv-item.is-menu-open').forEach((el) => {
+        el.classList.remove('is-menu-open');
+      });
     }
   }
 
   function openConvContextMenu(convId, anchorEl) {
     const menu = $('conv-context-menu');
     const conv = (state.conversations || []).find((c) => c.id === convId);
-    if (!menu || !conv) return;
+    if (!menu || !conv || !anchorEl) return;
 
     if (state.contextMenuConvId === convId && !menu.hidden) {
       closeConvContextMenu();
       return;
     }
 
+    // 1. 率先精确获取 anchor 按钮在当前视口中的绝对坐标（避开任何 DOM 重构干扰）
+    const rect = anchorEl.getBoundingClientRect();
+
     state.contextMenuConvId = convId;
-    renderConversationList();
+    document.querySelectorAll('.conv-item').forEach((el) => {
+      el.classList.toggle('is-menu-open', el.dataset.convId === convId);
+    });
 
     menu.innerHTML = `
       <button class="conv-menu-item" type="button" data-menu-action="rename">
@@ -4227,12 +4308,23 @@
     `;
 
     menu.hidden = false;
-    const rect = anchorEl.getBoundingClientRect();
     const menuRect = menu.getBoundingClientRect();
-    const left = Math.min(window.innerWidth - menuRect.width - 12, Math.max(8, rect.right - 12));
-    const top = Math.min(window.innerHeight - menuRect.height - 12, Math.max(8, rect.bottom + 4));
-    menu.style.left = `${left}px`;
-    menu.style.top = `${top}px`;
+
+    // 水平对齐：右边缘对齐三点按钮的右边缘（内缩 2px），并在视口边界内做安全钳位
+    let left = rect.right - menuRect.width - 2;
+    if (left < 10) left = 10;
+    if (left + menuRect.width > window.innerWidth - 10) {
+      left = window.innerWidth - menuRect.width - 10;
+    }
+
+    // 垂直对齐：默认在按钮正下方弹出；若视口底部空间不足以完整容纳，则自适应向上翻转弹出
+    let top = rect.bottom + 4;
+    if (top + menuRect.height > window.innerHeight - 10) {
+      top = Math.max(10, rect.top - menuRect.height - 4);
+    }
+
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.top = `${Math.round(top)}px`;
 
     menu.onclick = async (ev) => {
       const btn = ev.target.closest('[data-menu-action]');

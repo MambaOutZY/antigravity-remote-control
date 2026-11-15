@@ -365,11 +365,15 @@ function createAppServer(options = {}) {
     return path.resolve(candidate);
   };
 
-  const isRequestAuthenticated = (req) => {
+  const isRequestAuthenticated = (req, reqUrl) => {
     const password = getAuthPassword();
     if (!password) return true;
     const headerToken = req.headers['x-agy-token'];
     if (typeof headerToken === 'string' && sessionMgr.verifyToken(headerToken.trim(), password)) {
+      return true;
+    }
+    const urlToken = reqUrl?.searchParams?.get('token');
+    if (typeof urlToken === 'string' && sessionMgr.verifyToken(urlToken.trim(), password)) {
       return true;
     }
     const cookies = parseCookies(req.headers.cookie);
@@ -409,7 +413,7 @@ function createAppServer(options = {}) {
 
     const authPassword = getAuthPassword();
     const authRequired = Boolean(authPassword);
-    const authenticated = isRequestAuthenticated(req);
+    const authenticated = isRequestAuthenticated(req, reqUrl);
 
     // 鉴权豁免接口：health、auth 系列与 bootstrap（bootstrap 在未登录时返回脱敏状态触发登录弹窗）
     const authExemptRoutes = new Set([
