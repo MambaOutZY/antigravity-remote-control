@@ -2617,6 +2617,16 @@ body.aux-collapsed .aux-pane {
   }
 }
 
+@keyframes agySpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.is-spinning svg {
+  animation: agySpin 0.75s linear infinite;
+  transform-origin: center;
+}
+
 /* 主面板：Model 列表 */
 .model-popover-main {
   width: 270px;

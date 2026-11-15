@@ -2406,16 +2406,28 @@
     updateModelPickerQuotaPill();
   }
 
+  let isRefreshingUsage = false;
   /**
    * 刷新并拉取最新额度数据
+   * @param {boolean} [silent=false] 是否静默更新（不弹 Toast 提示）
    */
-  async function refreshUsageLimits() {
+  async function refreshUsageLimits(silent = false) {
+    if (isRefreshingUsage) return;
+    isRefreshingUsage = true;
+    const refreshBtn = $('btn-refresh-usage');
+    refreshBtn?.classList.add('is-spinning');
+
     try {
       const data = await apiFetch('/api/meter/usage-limits');
       renderUsageLimits(data);
-      showToast('已同步最新模型配额与使用限制');
+      if (!silent) {
+        showToast('已同步最新模型配额与使用限制');
+      }
     } catch {
       // 容错使用当前缓存
+    } finally {
+      isRefreshingUsage = false;
+      refreshBtn?.classList.remove('is-spinning');
     }
   }
 
@@ -2569,6 +2581,8 @@
     if (willOpen) {
       renderModelSwitcherList();
       updateModelPickerQuotaPill();
+      // 每次点开模型选择与额度浮层时，自动重新查询并刷新最新额度
+      refreshUsageLimits(true);
     }
   }
 
@@ -4642,9 +4656,14 @@
       const trigger = $('btn-toggle-usage-view');
       if (usageEl) {
         usageEl.hidden = !usageEl.hidden;
+        const willShow = !usageEl.hidden;
         if (trigger) {
-          trigger.classList.toggle('is-expanded', !usageEl.hidden);
-          trigger.setAttribute('aria-expanded', String(!usageEl.hidden));
+          trigger.classList.toggle('is-expanded', willShow);
+          trigger.setAttribute('aria-expanded', String(willShow));
+        }
+        // 每次点开/展开 View Usage 额度面板时，强制向服务端重新查询最新额度
+        if (willShow) {
+          refreshUsageLimits(true);
         }
       }
     });
