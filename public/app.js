@@ -249,18 +249,21 @@
     return ok;
   }
 
-  /** 统一 API 请求封装：自动携带 Cookie 并在 401 时唤起登录弹窗 */
+  /** 统一 API 请求封装：自动携带 Cookie/Token 并在 401 时唤起登录弹窗 */
   async function apiFetch(url, options = {}) {
+    const savedToken = localStorage.getItem('agy_token');
     const fetchOpts = {
       credentials: 'same-origin',
       ...options,
       headers: {
+        ...(savedToken ? { 'x-agy-token': savedToken } : {}),
         ...(options.body ? { 'Content-Type': 'application/json' } : {}),
         ...(options.headers || {})
       }
     };
     const res = await fetch(url, fetchOpts);
     if (res.status === 401) {
+      localStorage.removeItem('agy_token');
       state.authRequired = true;
       state.authenticated = false;
       openAuthModal();
@@ -4017,10 +4020,13 @@
       const password = $('auth-password-input')?.value || '';
       const errEl = $('auth-error-msg');
       try {
-        await apiFetch('/api/auth/login', {
+        const loginRes = await apiFetch('/api/auth/login', {
           method: 'POST',
           body: JSON.stringify({ password })
         });
+        if (loginRes && loginRes.token) {
+          localStorage.setItem('agy_token', loginRes.token);
+        }
         closeAuthModal();
         showToast('身份验证成功');
         await loadBootstrap();
@@ -4034,6 +4040,7 @@
     $('btn-logout')?.addEventListener('click', async () => {
       try {
         await apiFetch('/api/auth/logout', { method: 'POST' });
+        localStorage.removeItem('agy_token');
         state.authenticated = false;
         openAuthModal();
       } catch (err) {
