@@ -422,6 +422,18 @@ describe('agy-remote-control 全链路冒烟测试', () => {
     assert.ok((localImgRes.headers.get('content-type') || '').startsWith('image/png'));
     const localImgBuf = Buffer.from(await localImgRes.arrayBuffer());
     assert.deepEqual(localImgBuf, originalBuf, '/api/local-image 返回内容应与本地文件一致');
+
+    // 5.2 验证通过 convId + file 安全只读会话 brain 目录下的产物图片
+    const convBrainDir = path.join(agDir, 'brain', 'conv-test-123');
+    fs.mkdirSync(convBrainDir, { recursive: true });
+    const convArtifactPath = path.join(convBrainDir, 'great_wall_sunrise_test.png');
+    fs.writeFileSync(convArtifactPath, originalBuf);
+
+    const convImgRes = await fetch(`${baseUrl}/api/local-image?convId=conv-test-123&file=great_wall_sunrise_test.png&token=${encodeURIComponent(authToken)}`);
+    assert.equal(convImgRes.status, 200, '支持通过 convId 与 file 读取会话产物图片');
+    assert.ok((convImgRes.headers.get('content-type') || '').startsWith('image/png'));
+    const convImgBuf = Buffer.from(await convImgRes.arrayBuffer());
+    assert.deepEqual(convImgBuf, originalBuf, '会话产物图片内容与原始写入内容必须一致');
   });
 
   it('6. POST /api/chat/stream (mock: true) 验证 SSE 返回 event: text 与 event: done', async () => {

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>AGY Remote 私有控制台</title>
-  <link rel="stylesheet" href="/styles.css?v=20261115h" />
+  <link rel="stylesheet" href="/styles.css?v=20261116a" />
 </head>
 <body>
   <!-- 移动端侧栏遮罩层 -->
@@ -756,29 +756,165 @@
           <div id="suggest-list" class="suggest-list"></div>
         </div>
 
+        <!-- 官方 1:1 模型快速切换与额度查看浮层 (Model & Usage Popover) -->
+        <div id="model-switcher-popover" class="model-switcher-popover" role="dialog" aria-label="模型选择与额度详情" hidden>
+          <!-- 主视图：Model 列表 -->
+          <div class="model-popover-main">
+            <div class="model-popover-header">
+              <span class="model-popover-label">Model</span>
+              <span class="model-popover-hint">点击快速切换</span>
+            </div>
+            <div id="model-popover-list" class="model-popover-list" role="menu">
+              <!-- 动态填充模型列表项 -->
+            </div>
+            <div class="model-popover-divider"></div>
+            <!-- 查看额度入口项 (View Usage) -->
+            <button id="btn-toggle-usage-view" class="model-popover-item model-usage-trigger is-expanded" type="button" aria-haspopup="menu" aria-expanded="true">
+              <div class="item-left">
+                <svg class="item-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                  <path d="M2.5 13.5h11M3.5 10.5l2.5-3 3 2 3.5-5" />
+                </svg>
+                <span>View Usage</span>
+              </div>
+              <div class="item-right">
+                <svg class="chevron-right-icon" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"/></svg>
+              </div>
+            </button>
+          </div>
+
+          <!-- 额度面板：Usage (双分组限额与绿色圆环进度) -->
+          <div id="model-popover-usage" class="model-popover-usage" role="menu" aria-label="额度与使用限制">
+            <div class="usage-popover-header">
+              <span class="usage-popover-label">Usage</span>
+              <button id="btn-refresh-usage" class="icon-btn-xs" type="button" title="刷新额度与使用限制" aria-label="刷新额度">
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M13.5 8A5.5 5.5 0 1 1 8 2.5M13.5 2.5v4h-4" />
+                </svg>
+              </button>
+            </div>
+
+            <!-- 分组 1: Gemini Models -->
+            <div class="usage-group">
+              <div class="usage-group-title">Gemini Models</div>
+              <div class="usage-limit-row">
+                <div class="limit-info">
+                  <div class="limit-name">Weekly limit</div>
+                  <div id="usage-gemini-weekly-reset" class="limit-reset-time">Resets in 5d 15h</div>
+                </div>
+                <div class="limit-stat">
+                  <span id="usage-gemini-weekly-text" class="limit-pct-text tabular-nums">88% left</span>
+                  <svg class="quota-ring" viewBox="0 0 24 24" width="18" height="18">
+                    <circle class="ring-bg" cx="12" cy="12" r="9" />
+                    <circle id="usage-gemini-weekly-circle" class="ring-fg" cx="12" cy="12" r="9" style="stroke-dashoffset: 6.78;" />
+                  </svg>
+                </div>
+              </div>
+              <div class="usage-limit-row">
+                <div class="limit-info">
+                  <div class="limit-name">5h limit</div>
+                  <div id="usage-gemini-5h-reset" class="limit-reset-time">Resets in 39m</div>
+                </div>
+                <div class="limit-stat">
+                  <span id="usage-gemini-5h-text" class="limit-pct-text tabular-nums">72% left</span>
+                  <svg class="quota-ring" viewBox="0 0 24 24" width="18" height="18">
+                    <circle class="ring-bg" cx="12" cy="12" r="9" />
+                    <circle id="usage-gemini-5h-circle" class="ring-fg" cx="12" cy="12" r="9" style="stroke-dashoffset: 15.83;" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <!-- 分组 2: Claude and GPT models -->
+            <div class="usage-group">
+              <div class="usage-group-title">Claude and GPT models</div>
+              <div class="usage-limit-row">
+                <div class="limit-info">
+                  <div class="limit-name">Weekly limit</div>
+                  <div id="usage-claude-weekly-reset" class="limit-reset-time">Resets in 6d 2h</div>
+                </div>
+                <div class="limit-stat">
+                  <span id="usage-claude-weekly-text" class="limit-pct-text tabular-nums">100% left</span>
+                  <svg class="quota-ring" viewBox="0 0 24 24" width="18" height="18">
+                    <circle class="ring-bg" cx="12" cy="12" r="9" />
+                    <circle id="usage-claude-weekly-circle" class="ring-fg" cx="12" cy="12" r="9" style="stroke-dashoffset: 0;" />
+                  </svg>
+                </div>
+              </div>
+              <div class="usage-limit-row">
+                <div class="limit-info">
+                  <div class="limit-name">5h limit</div>
+                  <div id="usage-claude-5h-reset" class="limit-reset-time">Resets in 4h 50m</div>
+                </div>
+                <div class="limit-stat">
+                  <span id="usage-claude-5h-text" class="limit-pct-text tabular-nums">100% left</span>
+                  <svg class="quota-ring" viewBox="0 0 24 24" width="18" height="18">
+                    <circle class="ring-bg" cx="12" cy="12" r="9" />
+                    <circle id="usage-claude-5h-circle" class="ring-fg" cx="12" cy="12" r="9" style="stroke-dashoffset: 0;" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="composer-box">
-          <textarea id="prompt-input" class="prompt-input" rows="2" placeholder="输入指令或问题… Enter 发送，Shift+Enter 换行，支持 Ctrl+V 粘贴或拖拽图片"></textarea>
+          <!-- 官方原生顶栏项目与分支胶囊 -->
+          <div class="composer-meta-capsules">
+            <button id="composer-project-pill" class="composer-capsule-btn" type="button" title="当前项目/工作区（点击切换）">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1.5 3.5h4.2l1.3 1.5h7.5v8h-13z" />
+              </svg>
+              <span id="composer-project-name">antigravity-remote-controll</span>
+              <svg class="capsule-chevron" viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+            </button>
+            <button id="composer-branch-pill" class="composer-capsule-btn" type="button" title="当前 Git 分支">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="4" cy="4" r="2" />
+                <circle cx="4" cy="12" r="2" />
+                <circle cx="12" cy="7" r="2" />
+                <path d="M4 6v4M4 6c0 3 8 0 8 1" />
+              </svg>
+              <span id="composer-branch-name">main</span>
+            </button>
+          </div>
+
+          <textarea id="prompt-input" class="prompt-input" rows="2" placeholder="Ask anything, @ to mention, / for actions"></textarea>
 
           <div class="composer-toolbar">
             <div class="composer-controls-left">
-              <!-- 上传图片按钮 -->
+              <!-- 上传图片按钮 (官方同款 + 号图标) -->
               <input id="file-upload-input" type="file" accept="image/*" multiple hidden />
-              <button id="btn-attach-image" class="tool-btn" type="button" title="上传或粘贴图片 (支持 PNG/JPEG/GIF/BMP)">
-                <svg viewBox="0 0 18 18" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M15.2 8.4l-6.6 6.6a3.6 3.6 0 0 1-5.1-5.1l7-7a2.4 2.4 0 0 1 3.4 3.4l-6.7 6.7a1.2 1.2 0 0 1-1.7-1.7l6-6" />
+              <button id="btn-attach-image" class="composer-icon-btn" type="button" title="添加上下文、上传或粘贴图片 (支持 PNG/JPEG/GIF/BMP)">
+                <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                  <path d="M8 3v10M3 8h10" />
                 </svg>
-                <span>传图</span>
               </button>
 
-              <!-- --model 选择 -->
-              <label class="ctrl-select-wrap" title="选择推理模型 (--model)">
-                <span class="ctrl-label">模型</span>
-                <select id="select-model" class="ctrl-select"></select>
-              </label>
+              <!-- 官方 1:1 模型选择与额度胶囊按钮 (点击展开快捷浮层) -->
+              <button id="btn-model-picker" class="model-picker-btn" type="button" aria-haspopup="menu" aria-expanded="false" title="切换推理模型与查看额度 (点击快速切换)">
+                <span id="model-picker-name" class="model-picker-name">Gemini 3.8 Flash High</span>
+                <span id="model-picker-quota" class="model-picker-quota-badge" title="当前模型额度">
+                  <svg class="quota-ring-mini" viewBox="0 0 16 16" width="13" height="13">
+                    <circle class="ring-bg" cx="8" cy="8" r="6" />
+                    <circle id="model-picker-quota-circle" class="ring-fg" cx="8" cy="8" r="6" style="stroke-dashoffset: 10.55;" />
+                  </svg>
+                  <span id="model-picker-quota-text" class="quota-pct-text tabular-nums">72%</span>
+                </span>
+                <svg class="chevron-icon" viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+              </button>
 
-              <!-- --effort 选择 -->
-              <label class="ctrl-select-wrap" title="推理思考强度 (--effort)">
-                <span class="ctrl-label">强度</span>
+              <!-- 官方原版权限模式切换胶囊 (Turbo / Auto / Plan) -->
+              <button id="btn-mode-picker" class="mode-picker-btn" type="button" title="切换执行权限模式">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 2l5 2v4c0 3.5-2.5 6-5 7-2.5-1-5-3.5-5-7V4l5-2z" />
+                </svg>
+                <span id="mode-picker-label">Turbo</span>
+                <svg class="chevron-icon" viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg>
+              </button>
+
+              <!-- 保持原生控件在 DOM 中，保留 100% 逻辑与测试向后兼容性 (视觉隐藏) -->
+              <div class="composer-compat-selects" hidden>
+                <select id="select-model" class="ctrl-select"></select>
                 <select id="select-effort" class="ctrl-select">
                   <option value="" selected>默认</option>
                   <option value="low">low</option>
@@ -787,23 +923,13 @@
                   <option value="xhigh">xhigh</option>
                   <option value="max">max</option>
                 </select>
-              </label>
-
-              <!-- --mode 选择 -->
-              <label class="ctrl-select-wrap" title="执行权限模式 (--mode)">
-                <span class="ctrl-label">模式</span>
                 <select id="select-mode" class="ctrl-select">
                   <option value="auto" selected>auto</option>
                   <option value="accept-edits">accept-edits</option>
                   <option value="plan">plan</option>
                 </select>
-              </label>
-
-              <!-- --dangerously-skip-permissions 开关 -->
-              <label class="toggle-chip" title="跳过所有危险操作确认 (--dangerously-skip-permissions)">
-                <input id="chk-skip-permissions" type="checkbox" />
-                <span>免确认执行</span>
-              </label>
+                <input id="chk-skip-permissions" type="checkbox" checked />
+              </div>
             </div>
 
             <div class="composer-controls-right">
@@ -812,10 +938,9 @@
                 <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1.5" /></svg>
                 <span>停止</span>
               </button>
-              <button id="btn-send-prompt" class="btn-primary" type="button">
-                <span>发送</span>
-                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M2.5 8h11M9.5 4l4 4-4 4" />
+              <button id="btn-send-prompt" class="composer-send-btn" type="button" title="发送指令 (Enter)">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 8h10M8.5 3.5l4.5 4.5-4.5 4.5" />
                 </svg>
               </button>
             </div>
@@ -1003,6 +1128,6 @@
   <!-- 全局轻提示容器 -->
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
-  <script src="/app.js?v=20261115h"></script>
+  <script src="/app.js?v=20261116a"></script>
 </body>
 </html>

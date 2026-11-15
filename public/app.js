@@ -347,13 +347,15 @@
     return '#';
   }
 
-  /** 将 Markdown 图片 URL 归一化为浏览器可加载地址（自动代理 file:// 与本地路径，并附带 Token） */
-  function resolveMarkdownImageSrc(rawUrl) {
+  /** 将 Markdown 图片 URL 归一化为浏览器可加载地址（自动代理 file://、本地绝对路径以及会话 brain 目录相对路径，并附带 Token） */
+  function resolveMarkdownImageSrc(rawUrl, optionalConvId = null) {
     const trimmed = String(rawUrl || '').trim();
     if (!trimmed) return '';
     if (/^data:image\/(?:png|jpeg|jpg|gif|webp|bmp);base64,/i.test(trimmed)) return trimmed;
     const token = localStorage.getItem('agy_token');
     const tokenQuery = token ? `&token=${encodeURIComponent(token)}` : '';
+    const activeConvId = optionalConvId || state.currentConversationId || '';
+
     if (trimmed.startsWith('/api/uploads/')) {
       return token ? `${trimmed}${trimmed.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : trimmed;
     }
@@ -361,29 +363,54 @@
       return token ? `${trimmed}${trimmed.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : trimmed;
     }
     if (/^https?:\/\//i.test(trimmed)) return trimmed;
+
+    // 本地绝对路径与 file:// 协议
     if (trimmed.startsWith('file://') || /^\/(?:home|Users|tmp|var|opt|mnt)\//.test(trimmed) || /^[a-zA-Z]:[\\/]/.test(trimmed)) {
+      const extraConv = activeConvId ? `&convId=${encodeURIComponent(activeConvId)}` : '';
+      return `/api/local-image?path=${encodeURIComponent(trimmed)}${extraConv}${tokenQuery}`;
+    }
+
+    // 相对路径或纯文件名：若属于常见图片扩展名，自动代理至当前会话 brain 目录下
+    if (/\.(?:png|jpe?g|gif|webp|bmp|svg)(?:\?.*)?$/i.test(trimmed)) {
+      const cleanFileName = trimmed.replace(/^\.\//, '');
+      if (activeConvId) {
+        return `/api/local-image?convId=${encodeURIComponent(activeConvId)}&file=${encodeURIComponent(cleanFileName)}${tokenQuery}`;
+      }
       return `/api/local-image?path=${encodeURIComponent(trimmed)}${tokenQuery}`;
     }
+
     if (trimmed.startsWith('/')) return trimmed;
     return '';
   }
 
   /** 渲染行内 Markdown 语法（行内代码、图片、链接、加粗、斜体、删除线） */
   function renderInlineMarkdown(rawText) {
-    const codeSlots = [];
-    // 先提取行内代码防止内部符号被二次解析
-    let text = String(rawText || '').replace(/`([^`\n]+)`/g, (_, code) => {
-      const idx = codeSlots.length;
-      codeSlots.push(`<code class="inline-code">${escapeHtml(code)}</code>`);
-      return `\u0000CODE${idx}\u0000`;
-    });
-
+    let text = String(rawText || '');
     const imgSlots = [];
 
-    // 0. 特殊处理：提示词中的 [附件图片: /path/to/img.png ...] 结构化展示
+    // 0. 特殊处理：落盘清单中的 存储路径 / 落盘路径 / 输出路径 / 文件链接: /path/to/img.jpg 或 `xxx.jpg`
+    text = text.replace(/(?:存储路径|落盘路径|生成图片|输出图片|文件路径|文件链接)[:：]\s*[`'"]?([^\s\r\n)\]'"]+?\.(?:png|jpe?g|gif|webp|bmp|svg))[`'"]?/gi, (full, imgPath) => {
+      const cleanPath = imgPath.replace(/^[`'"]+|[`'"]+$/g, '').trim();
+      const src = resolveMarkdownImageSrc(cleanPath);
+      const fileName = cleanPath.split(/[\\/]/).pop() || '生成图片';
+      if (!src) return full;
+      const idx = imgSlots.length;
+      imgSlots.push(`
+        <div class="md-auto-img-card" data-lightbox-src="${escapeHtml(src)}" data-lightbox-caption="${escapeHtml(fileName)}">
+          <div class="md-auto-img-title">🖼️ ${escapeHtml(fileName)} <span class="md-auto-img-path">${escapeHtml(cleanPath)}</span></div>
+          <div class="md-auto-img-preview">
+            <img class="md-inline-img is-block" src="${escapeHtml(src)}" alt="${escapeHtml(fileName)}" loading="lazy" />
+          </div>
+        </div>
+      `);
+      return `\u0000IMG${idx}\u0000`;
+    });
+
+    // 0.5 特殊处理：提示词中的 [附件图片: /path/to/img.png ...] 结构化展示
     text = text.replace(/\[附件图片:\s*([^\s\r\n\]]+)(?:[^\r\n\]]*?)\]/gi, (full, imgPath) => {
-      const src = resolveMarkdownImageSrc(imgPath);
-      const fileName = imgPath.split(/[\\/]/).pop() || '附件图片';
+      const cleanPath = imgPath.replace(/^[`'"]+|[`'"]+$/g, '').trim();
+      const src = resolveMarkdownImageSrc(cleanPath);
+      const fileName = cleanPath.split(/[\\/]/).pop() || '附件图片';
       if (!src) return `<span class="md-att-tag">📎 附件图片: ${escapeHtml(fileName)}</span>`;
       const idx = imgSlots.length;
       imgSlots.push(`
@@ -397,43 +424,53 @@
       return `\u0000IMG${idx}\u0000`;
     });
 
-    // 0.5 特殊处理：落盘清单中的 存储路径 / 落盘路径 / 输出路径: /path/to/img.jpg
-    text = text.replace(/(存储路径|落盘路径|生成图片|输出图片|文件路径)[:：]\s*([^\s\r\n)\]'"]+?\.(?:png|jpe?g|gif|webp|bmp|svg))/gi, (full, label, imgPath) => {
-      const src = resolveMarkdownImageSrc(imgPath);
-      const fileName = imgPath.split(/[\\/]/).pop() || '生成图片';
-      if (!src) return full;
+    // 1. 显式 Markdown 图片语法：![alt](url) 优先全局消费，绝不留下破损的 !<a>
+    text = text.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (full, alt, url) => {
+      const cleanUrl = url.replace(/^[`'"]+|[`'"]+$/g, '').trim();
+      const src = resolveMarkdownImageSrc(cleanUrl);
+      const label = alt || cleanUrl.split(/[\\/]/).pop() || '生成图片';
       const idx = imgSlots.length;
-      imgSlots.push(`
-        <div class="md-auto-img-card" data-lightbox-src="${escapeHtml(src)}" data-lightbox-caption="${escapeHtml(fileName)}">
-          <div class="md-auto-img-title">🖼️ ${escapeHtml(label)}: <span class="md-auto-img-path">${escapeHtml(imgPath)}</span></div>
-          <div class="md-auto-img-preview">
-            <img class="md-inline-img is-block" src="${escapeHtml(src)}" alt="${escapeHtml(fileName)}" loading="lazy" />
+      if (src) {
+        imgSlots.push(`
+          <div class="md-auto-img-card" data-lightbox-src="${escapeHtml(src)}" data-lightbox-caption="${escapeHtml(label)}">
+            <img class="md-inline-img" src="${escapeHtml(src)}" alt="${escapeHtml(label)}" loading="lazy" />
           </div>
-        </div>
-      `);
+        `);
+      } else {
+        imgSlots.push(`<span class="md-img-fallback">🖼️ ${escapeHtml(label)}</span>`);
+      }
       return `\u0000IMG${idx}\u0000`;
     });
 
-    // 1. 显式 Markdown 图片语法：![alt](url)
-    text = text.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (full, alt, url) => {
-      const src = resolveMarkdownImageSrc(url);
-      if (!src) return full;
-      const idx = imgSlots.length;
-      imgSlots.push(`
-        <div class="md-auto-img-card" data-lightbox-src="${escapeHtml(src)}" data-lightbox-caption="${escapeHtml(alt || '生成图片')}">
-          <img class="md-inline-img" src="${escapeHtml(src)}" alt="${escapeHtml(alt || '生成图片')}" loading="lazy" />
-        </div>
-      `);
-      return `\u0000IMG${idx}\u0000`;
+    // 2. 提取普通行内代码（若行内代码为图片文件名，附带行内预览）
+    const codeSlots = [];
+    text = text.replace(/`([^`\n]+)`/g, (_, code) => {
+      const trimmedCode = code.trim();
+      if (/\.(?:png|jpe?g|gif|webp|bmp|svg)$/i.test(trimmedCode)) {
+        const src = resolveMarkdownImageSrc(trimmedCode);
+        if (src) {
+          const idx = imgSlots.length;
+          imgSlots.push(`
+            <span class="md-code-img-wrap" data-lightbox-src="${escapeHtml(src)}" data-lightbox-caption="${escapeHtml(trimmedCode)}">
+              <code class="inline-code">${escapeHtml(code)}</code>
+              <img class="md-inline-img" src="${escapeHtml(src)}" alt="${escapeHtml(trimmedCode)}" loading="lazy" />
+            </span>
+          `);
+          return `\u0000IMG${idx}\u0000`;
+        }
+      }
+      const idx = codeSlots.length;
+      codeSlots.push(`<code class="inline-code">${escapeHtml(code)}</code>`);
+      return `\u0000CODE${idx}\u0000`;
     });
 
     let safe = escapeHtml(text);
-    // 2. 超链接解析：若链接目标或文字明显是图片文件（如 .jpg / .png），在超链接后附带行内预览图
+    // 3. 超链接解析：若链接目标或文字明显是图片文件（如 .jpg / .png），在超链接后附带行内预览图
     safe = safe.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (full, label, url) => {
       const href = escapeHtml(sanitizeHref(url));
       const isImgTarget = /\.(?:png|jpe?g|gif|webp|bmp|svg)(?:\?.*)?$/i.test(url) || /\.(?:png|jpe?g|gif|webp|bmp|svg)$/i.test(label);
       if (isImgTarget) {
-        const imgSrc = resolveMarkdownImageSrc(url);
+        const imgSrc = resolveMarkdownImageSrc(url) || resolveMarkdownImageSrc(label);
         if (imgSrc) {
           const idx = imgSlots.length;
           imgSlots.push(`
@@ -1141,8 +1178,9 @@
 
     const filteredSamples = rawSamples.filter((s) => {
       const ts = Number(s.ts || new Date(s.date || 0).getTime() || 0);
-      if (cutoffMs && ts < cutoffMs) return false;
-      if (sourceFilter === 'chat' && s.source !== 'chat') return false;
+      if (cutoffMs && ts > 0 && ts < cutoffMs) return false;
+      // 日常对话筛选：容错支持 chat / cli 以及未标记后台任务的普通对话样本
+      if (sourceFilter === 'chat' && s.source === 'background') return false;
       return true;
     });
 
@@ -1173,8 +1211,28 @@
       };
     }).filter((g) => g.count > 0);
 
-    // 若暂无原始样本且筛选全部来源，回退使用后端预计算的 speedSummaryByRange
-    if (!groups.length && sourceFilter === 'all') {
+    // 若当前筛选条件下暂无原始样本，多级智能回退（绝不轻易显示空白）：
+    // 1. 若原始样本库有数据但被时间限制过滤，放宽时间范围提取所有可用样本
+    if (!groups.length && rawSamples.length > 0) {
+      const fallbackMap = new Map();
+      rawSamples.forEach((s) => {
+        if (sourceFilter === 'chat' && s.source === 'background') return;
+        const baseName = s.productLabel || s.modelLabel || s.model || '未知模型';
+        const effortText = s.effort ? ` (${s.effort})` : '';
+        const key = `${s.modelExactId || s.model || baseName}::${s.effort || ''}`;
+        if (!fallbackMap.has(key)) {
+          fallbackMap.set(key, { key, label: `${baseName}${effortText}`, samples: [] });
+        }
+        fallbackMap.get(key).samples.push(s);
+      });
+      groups = Array.from(fallbackMap.values()).map((g) => {
+        const metricVals = g.samples.map((s) => extractSampleMetric(s, metric)).filter((v) => v != null);
+        return { ...g, count: metricVals.length, medianVal: metricVals.length ? computeMedian(metricVals) : 0 };
+      }).filter((g) => g.count > 0);
+    }
+
+    // 2. 若仍无样本，回退使用后端预计算的 speedSummaryByRange 或 modelSpeedStats
+    if (!groups.length) {
       const rangeKey = range === '7' ? '7d' : (range === '30' ? '30d' : 'all');
       const fallbackList = state.historyData?.speedSummaryByRange?.[rangeKey]
         || state.historyData?.modelSpeedStats

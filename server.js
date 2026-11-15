@@ -504,11 +504,12 @@ function createAppServer(options = {}) {
         const agyStatus = resolveAgyBinary(getAgyBinOption());
         const meterOpts = getMeterOpts();
         const switchOpts = getSwitchOpts();
-        const [models, convAudit, historyData, projectData] = await Promise.all([
+        const [models, convAudit, historyData, projectData, usageLimits] = await Promise.all([
           getAvailableModels({ binPath: getAgyBinOption(), proxyOpts: switchOpts }),
           Promise.resolve(meterEngine.listConversationsAndAudit(meterOpts)),
           Promise.resolve(meterEngine.getTokenHistoryDashboard({ ...meterOpts, sourceFilter: 'all' })),
-          Promise.resolve(meterEngine.collectProjects(meterOpts))
+          Promise.resolve(meterEngine.collectProjects(meterOpts)),
+          Promise.resolve(meterEngine.getUsageLimits(meterOpts))
         ]);
 
         sendJson(res, 200, {
@@ -522,6 +523,7 @@ function createAppServer(options = {}) {
           projects: projectData?.projects || [],
           conversations: convAudit?.conversations || [],
           commands: getRegisteredCommands({ homeDir: os.homedir() }),
+          usageLimits: usageLimits || null,
           tokenSummary: historyData?.summary
             ? { ...historyData.summary, costSummary: historyData.costSummary || null }
             : null
@@ -762,22 +764,75 @@ function createAppServer(options = {}) {
         return;
       }
 
-      // 10.5 安全只读本地生成的图片（支持 file:// 与本地路径，严格白名单目录与扩展名）
+      // 10.5 安全只读本地生成的图片（支持 file://、绝对路径以及 convId+file 相对路径，严格白名单目录与扩展名）
       if (method === 'GET' && pathname === '/api/local-image') {
         const rawPath = String(reqUrl.searchParams.get('path') || '').trim();
-        if (!rawPath || rawPath.includes('\0')) {
-          sendJson(res, 400, { error: '无效的图片路径' });
-          return;
-        }
-        let targetPath = rawPath;
-        if (targetPath.startsWith('file://')) {
-          try {
-            targetPath = url.fileURLToPath(targetPath);
-          } catch {
-            sendJson(res, 400, { error: '无效的 file:// URL' });
+        const convId = String(reqUrl.searchParams.get('convId') || '').trim();
+        const fileParam = String(reqUrl.searchParams.get('file') || '').trim();
+
+        let targetPath = '';
+
+        // 支持通过会话 ID + 文件名安全读取会话 brain 目录下的产物图片
+        if (convId && fileParam) {
+          if (/[\\/\0]/.test(convId) || convId.includes('..') || /[\\/\0]/.test(fileParam) || fileParam.includes('..')) {
+            sendJson(res, 400, { error: '非法的会话 ID 或文件名' });
             return;
           }
+          const candidateRoots = [
+            options.agCliDir ? path.resolve(options.agCliDir, 'brain', convId) : null,
+            options.agDir ? path.resolve(options.agDir, 'brain', convId) : null,
+            path.resolve(os.homedir(), '.gemini', 'antigravity-cli', 'brain', convId),
+            path.resolve(os.homedir(), '.gemini', 'antigravity', 'brain', convId)
+          ].filter(Boolean);
+          for (const cRoot of candidateRoots) {
+            const candidate = path.join(cRoot, fileParam);
+            if (fs.existsSync(candidate)) {
+              targetPath = candidate;
+              break;
+            }
+          }
         }
+
+        if (!targetPath && rawPath) {
+          if (rawPath.includes('\0')) {
+            sendJson(res, 400, { error: '无效的图片路径' });
+            return;
+          }
+          let parsedCandidate = rawPath;
+          if (parsedCandidate.startsWith('file://')) {
+            try {
+              parsedCandidate = url.fileURLToPath(parsedCandidate);
+            } catch {
+              sendJson(res, 400, { error: '无效的 file:// URL' });
+              return;
+            }
+          }
+
+          // 若直接传入相对文件名且提供了 convId，尝试在会话 brain 目录下查找
+          if (convId && !path.isAbsolute(parsedCandidate) && !/[\\/]/.test(parsedCandidate)) {
+            const candidateRoots = [
+              options.agCliDir ? path.resolve(options.agCliDir, 'brain', convId) : null,
+              options.agDir ? path.resolve(options.agDir, 'brain', convId) : null,
+              path.resolve(os.homedir(), '.gemini', 'antigravity-cli', 'brain', convId),
+              path.resolve(os.homedir(), '.gemini', 'antigravity', 'brain', convId)
+            ].filter(Boolean);
+            for (const cRoot of candidateRoots) {
+              const candidate = path.join(cRoot, parsedCandidate);
+              if (fs.existsSync(candidate)) {
+                parsedCandidate = candidate;
+                break;
+              }
+            }
+          }
+
+          targetPath = parsedCandidate;
+        }
+
+        if (!targetPath) {
+          sendJson(res, 400, { error: '缺少图片路径 (path) 或会话参数 (convId + file)' });
+          return;
+        }
+
         const resolved = path.resolve(targetPath);
         const ext = path.extname(resolved).toLowerCase();
         const MIME_BY_EXT = {
@@ -801,6 +856,8 @@ function createAppServer(options = {}) {
           path.resolve(getDefaultWorkspace()),
           path.resolve(fallbackUploadBase)
         ];
+        if (options.agDir) allowedRoots.push(path.resolve(options.agDir));
+        if (options.agCliDir) allowedRoots.push(path.resolve(options.agCliDir));
         if (process.env.AG_DIR) allowedRoots.push(path.resolve(process.env.AG_DIR));
         if (process.env.AG_CLI_DIR) allowedRoots.push(path.resolve(process.env.AG_CLI_DIR));
         const isAllowed = allowedRoots.some((root) => {
@@ -898,6 +955,13 @@ function createAppServer(options = {}) {
           sourceFilter
         });
         sendJson(res, 200, dashboard);
+        return;
+      }
+
+      // 12.5 模型调用额度与使用限制（5h 滑动窗口与周额度）
+      if (method === 'GET' && pathname === '/api/meter/usage-limits') {
+        const limits = meterEngine.getUsageLimits(getMeterOpts());
+        sendJson(res, 200, limits);
         return;
       }
 
