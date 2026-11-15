@@ -144,3 +144,12 @@ node --test test/smoke.test.js
 ```
 
 Licensed under the [MIT License](./LICENSE).
+
+---
+
+## 7. Acknowledgements
+
+This project draws inspiration and code references from the following open-source projects. Special thanks to their authors and contributors:
+
+- **[antigravity-context-viewer](https://github.com/elviscjn-cjn/antigravity-context-viewer)**: Referenced for context usage monitoring, token estimation & auditing, 52-week heatmap analytics, and 256K context window gate unlock ideas and implementation.
+- **[cockpit-tools](https://github.com/jlcodes99/cockpit-tools)**: Referenced for account management, multi-account switching, and related tooling integration ideas and implementation.

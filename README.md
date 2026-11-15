@@ -304,3 +304,12 @@ node --test test/smoke.test.js
 1. **公网暴露必设密码**：任何穿透到公网的部署都务必设置高强度 `AGY_AUTH_PASSWORD`，并优先配合 HTTPS + Zero Trust Access / BasicAuth。
 2. **慎用 `--dangerously-skip-permissions`**：该开关允许模型在未人工二次确认的情况下执行工作区命令/修改文件，建议仅在受控隔离项目中使用。
 3. **定期检查登录态**：若发现诊断徽章提示认证错误，在 Ubuntu 终端重新执行 `agy auth login`（或重新登录）即可立即恢复配额与调用能力。
+
+---
+
+## 七、鸣谢与致敬
+
+本项目在设计与实现过程中参考了以下优秀开源项目的思路与代码实现，特此诚挚致谢：
+
+- **[antigravity-context-viewer](https://github.com/elviscjn-cjn/antigravity-context-viewer)**：参考了上下文用量监控、Token 测算审计、52 周热力图统计及 256K 上下文门禁解锁等核心思路与实现。
+- **[cockpit-tools](https://github.com/jlcodes99/cockpit-tools)**：参考了账号管理、多账号切换与相关工具链集成的思路与代码实现。
