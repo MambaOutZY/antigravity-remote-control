@@ -787,8 +787,9 @@ function createAppServer(options = {}) {
         }
         const allowedRoots = [
           path.resolve(os.homedir(), '.gemini'),
+          path.resolve(os.homedir(), '.config', 'agy-remote'),
           path.resolve(os.tmpdir()),
-          path.resolve(defaultWorkspace),
+          path.resolve(getDefaultWorkspace()),
           path.resolve(fallbackUploadBase)
         ];
         if (process.env.AG_DIR) allowedRoots.push(path.resolve(process.env.AG_DIR));
@@ -803,7 +804,7 @@ function createAppServer(options = {}) {
         }
         try {
           const st = await fs.promises.stat(resolved);
-          if (!st.isFile() || st.size > MAX_UPLOAD_BYTES) {
+          if (!st.isFile() || st.size > MAX_UPLOAD_FILE_BYTES) {
             sendJson(res, 404, { error: '图片文件不存在或超出大小限制' });
             return;
           }
@@ -811,7 +812,8 @@ function createAppServer(options = {}) {
           res.writeHead(200, {
             'Content-Type': mime,
             'Content-Length': buf.length,
-            'Cache-Control': 'private, max-age=3600'
+            'Cache-Control': 'private, max-age=3600',
+            'Access-Control-Allow-Origin': '*'
           });
           res.end(buf);
         } catch {

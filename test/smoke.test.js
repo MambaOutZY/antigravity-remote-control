@@ -75,6 +75,7 @@ describe('agy-remote-control 全链路冒烟测试', () => {
   let server = null;
   let baseUrl = '';
   let authCookie = '';
+  let authToken = '';
 
   const cliConvId = 'smoke-cli-conv-001';
   const deskConvId = 'smoke-desk-conv-002';
@@ -255,6 +256,7 @@ describe('agy-remote-control 全链路冒烟测试', () => {
     const sessionPair = setCookies[0].split(';')[0];
     assert.ok(sessionPair.startsWith('agy_session='), `Cookie 名称应为 agy_session，实际为 ${sessionPair}`);
     authCookie = sessionPair;
+    authToken = loginJson.token || '';
 
     // 携带 Cookie 后访问 /api/conversations 应返回 200 及双源会话
     const authedRes = await fetch(`${baseUrl}/api/conversations`, {
@@ -405,6 +407,13 @@ describe('agy-remote-control 全链路冒烟测试', () => {
     assert.ok((downloadRes.headers.get('content-type') || '').startsWith('image/png'));
     const downloadedBuf = Buffer.from(await downloadRes.arrayBuffer());
     assert.deepEqual(downloadedBuf, originalBuf, '下载的图片二进制内容必须与上传内容完全一致');
+
+    // 5.1 验证通过 /api/local-image?path=... 安全只读本地落盘图片（支持 token 查询参数）
+    const localImgRes = await fetch(`${baseUrl}/api/local-image?path=${encodeURIComponent(uploadJson.file.path)}&token=${encodeURIComponent(authToken)}`);
+    assert.equal(localImgRes.status, 200, '/api/local-image 应能正常读取授权白名单目录内的图片');
+    assert.ok((localImgRes.headers.get('content-type') || '').startsWith('image/png'));
+    const localImgBuf = Buffer.from(await localImgRes.arrayBuffer());
+    assert.deepEqual(localImgBuf, originalBuf, '/api/local-image 返回内容应与本地文件一致');
   });
 
   it('6. POST /api/chat/stream (mock: true) 验证 SSE 返回 event: text 与 event: done', async () => {
