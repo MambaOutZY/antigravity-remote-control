@@ -2463,58 +2463,212 @@ body.aux-collapsed .aux-pane {
 }
 
 /* ============================================================================
- * 右侧辅助面板
+ * 右侧面板（完全对标 Antigravity 官方 Remote Control 侧边栏，保留 Git 模块）
  * ============================================================================ */
 
 .aux-pane {
-  background: var(--bg-surface);
-  border-left: 1px solid var(--border-subtle);
+  background: var(--bg-surface, #0f1015);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   flex-direction: column;
   min-height: 0;
+  width: 280px;
+  overflow: hidden;
 }
 
-.aux-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-bottom: 1px solid var(--border-subtle);
-  padding: 6px;
-  gap: 4px;
-}
-
-.aux-tab-btn {
-  padding: 6px 4px;
-  border-radius: 7px;
-  font-size: 11.5px;
-  color: var(--text-secondary);
-}
-
-.aux-tab-btn.is-active {
-  background: var(--bg-active);
-  color: var(--accent-bright);
-  font-weight: 600;
-}
-
-.aux-tab-panel {
+.side-panel-container {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: 12px 10px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
 }
 
-.aux-section-head {
+.side-panel-container::-webkit-scrollbar {
+  width: 5px;
+}
+
+.side-panel-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+
+.side-accordion-sec {
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  transition: background 0.15s ease;
+}
+
+.side-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 6px;
+  color: #9ca3af;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  user-select: none;
+  transition: color 0.1s ease, background 0.1s ease;
+}
+
+.side-sec-head:hover {
+  color: #f3f4f6;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.side-sec-title {
+  flex-shrink: 0;
+}
+
+.side-sec-badge {
+  font-size: 11px;
+  color: #71717a;
+  font-weight: 400;
+  margin-left: 1px;
+}
+
+.side-sec-chevron {
+  margin-left: 2px;
+  color: #71717a;
+  transition: transform 0.14s ease;
+}
+
+.side-accordion-sec:not(.is-expanded) .side-sec-chevron {
+  transform: rotate(-90deg);
+}
+
+.side-accordion-sec.is-expanded .side-sec-chevron {
+  transform: rotate(0deg);
+}
+
+.side-sec-body {
+  padding: 2px 4px 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.side-sec-empty {
+  padding: 6px 8px;
+  font-size: 11.5px;
+  color: #6b7280;
+  font-style: normal;
+}
+
+/* Subagent 列表项 */
+.subagent-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  transition: background 0.1s ease;
 }
 
-.aux-subhead {
+.subagent-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.subagent-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.subagent-role {
+  font-size: 12px;
+  font-weight: 500;
+  color: #e5e7eb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-meta {
+  font-size: 11px;
+  color: #71717a;
+  margin-top: 1px;
+}
+
+.subagent-check-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: #9ca3af;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Artifact 列表项 */
+.artifact-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #d1d5db;
+  font-size: 12px;
+  text-decoration: none;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.artifact-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+}
+
+.artifact-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  color: #9ca3af;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.artifact-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Upload & Task 列表项 */
+.side-mini-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
   font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-muted);
+  color: #9ca3af;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-mini-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: #e5e7eb;
+}
+
+/* Git 模块专属 */
+.git-meta-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
 }
 
 .git-branch-pill {
@@ -2523,9 +2677,10 @@ body.aux-collapsed .aux-pane {
   gap: 5px;
   padding: 2px 8px;
   border-radius: 6px;
-  background: var(--bg-subcard);
+  background: rgba(255, 255, 255, 0.06);
   font-size: 11.5px;
   font-weight: 600;
+  color: #e5e7eb;
 }
 
 .git-status-list,
@@ -2543,8 +2698,8 @@ body.aux-collapsed .aux-pane {
   gap: 8px;
   padding: 5px 8px;
   border-radius: 6px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   font-size: 11.5px;
 }
 
@@ -2555,7 +2710,7 @@ body.aux-collapsed .aux-pane {
 }
 
 .ws-file-row:hover {
-  background: var(--bg-hover);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .git-flag {

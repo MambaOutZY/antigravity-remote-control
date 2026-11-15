@@ -2229,6 +2229,7 @@
         })
         .catch(() => {});
       updateCliPreview();
+      renderSidePanel();
     } catch (err) {
       showToast(`初始化失败：${err.message}`, true);
     }
@@ -2517,6 +2518,7 @@
       renderChatHeader();
       renderMessages();
       renderContextView();
+      renderSidePanel();
       updateCliPreview();
       closeMobileDrawers();
     } catch (err) {
@@ -2608,6 +2610,7 @@
     renderChatHeader();
     renderMessages();
     renderContextView();
+    renderSidePanel();
     updateCliPreview();
     closeMobileDrawers();
     $('prompt-input')?.focus();
@@ -3079,6 +3082,7 @@
     state.streaming.runId = `run-${Date.now()}`;
     setStreamingUiState(true);
     renderContextView();
+    renderSidePanel();
     updateCliPreview();
 
     try {
@@ -3427,6 +3431,9 @@
       changes = parseGitPorcelain(data.statusRaw || data.statusText || data.porcelain || '');
     }
 
+    const gitCountEl = $('side-git-count');
+    if (gitCountEl) gitCountEl.textContent = changes.length;
+
     if (!changes.length) {
       const msg = data.exists === false ? (data.error || '工作区目录不存在') : (notGit ? '当前目录未初始化 Git 仓库' : '工作区干净，暂无未提交改动');
       statusList.innerHTML = `<div class="empty-placeholder">${escapeHtml(msg)}</div>`;
@@ -3481,6 +3488,144 @@
         </button>
       `;
     }).join('');
+  }
+
+  /**
+   * 渲染官方原版风格右侧 Side Panel（Subagents、Files Changed、Artifacts、Uploads、Tasks）
+   */
+  function renderSidePanel() {
+    const conv = state.activeConversationDetail;
+    const side = conv?.sidePanel || {
+      subagents: [],
+      artifacts: [],
+      uploads: [],
+      filesChanged: [],
+      backgroundTasks: []
+    };
+
+    // 1. Subagents
+    const subagentsCountEl = $('side-subagents-count');
+    const subagentsBodyEl = $('side-subagents-body');
+    if (subagentsCountEl) subagentsCountEl.textContent = side.subagents.length;
+    if (subagentsBodyEl) {
+      if (!side.subagents.length) {
+        subagentsBodyEl.innerHTML = `<div class="side-sec-empty">当前会话暂无子智能体运行</div>`;
+      } else {
+        subagentsBodyEl.innerHTML = side.subagents.map((s) => `
+          <div class="subagent-item">
+            <div class="subagent-info">
+              <span class="subagent-role" title="${escapeHtml(s.role)}">${escapeHtml(s.role)}</span>
+              <span class="subagent-meta">${escapeHtml(s.durationText || 'Worked for 1m')}</span>
+            </div>
+            <span class="subagent-check-icon" title="已完成">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="8" cy="8" r="6.5"/>
+                <path d="M5.5 8l2 2 3.5-3.5"/>
+              </svg>
+            </span>
+          </div>
+        `).join('');
+      }
+    }
+
+    // 2. Files Changed
+    const filesCountEl = $('side-files-count');
+    const filesBodyEl = $('side-files-body');
+    if (filesCountEl) filesCountEl.textContent = side.filesChanged.length;
+    if (filesBodyEl) {
+      if (!side.filesChanged.length) {
+        filesBodyEl.innerHTML = `<div class="side-sec-empty">暂无变动文件</div>`;
+      } else {
+        filesBodyEl.innerHTML = side.filesChanged.map((f) => `
+          <div class="side-mini-row" title="${escapeHtml(f.path)}">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M3.5 2h6l3.5 3.5V14H3.5z"/><path d="M9.5 2v4h4"/>
+            </svg>
+            <span>${escapeHtml(f.name || f.path)}</span>
+          </div>
+        `).join('');
+      }
+    }
+
+    // 3. Artifacts（产物图片与文件）
+    const artifactsCountEl = $('side-artifacts-count');
+    const artifactsBodyEl = $('side-artifacts-body');
+    if (artifactsCountEl) artifactsCountEl.textContent = side.artifacts.length;
+    if (artifactsBodyEl) {
+      if (!side.artifacts.length) {
+        artifactsBodyEl.innerHTML = `<div class="side-sec-empty">当前会话暂无生成产物</div>`;
+      } else {
+        artifactsBodyEl.innerHTML = side.artifacts.map((a) => `
+          <a class="artifact-item" href="${a.url}" target="_blank" data-preview-img="${a.url}" data-title="${escapeHtml(a.title)}">
+            <span class="artifact-icon">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="2" width="12" height="12" rx="2"/>
+                <circle cx="5.5" cy="5.5" r="1.2"/>
+                <path d="M14 10l-4-3-6 5"/>
+              </svg>
+            </span>
+            <span class="artifact-title" title="${escapeHtml(a.title)}">${escapeHtml(a.title)}</span>
+          </a>
+        `).join('');
+      }
+    }
+
+    // 4. Uploads
+    const uploadsCountEl = $('side-uploads-count');
+    const uploadsBodyEl = $('side-uploads-body');
+    if (uploadsCountEl) uploadsCountEl.textContent = side.uploads.length;
+    if (uploadsBodyEl) {
+      if (!side.uploads.length) {
+        uploadsBodyEl.innerHTML = `<div class="side-sec-empty">暂无上传文件</div>`;
+      } else {
+        uploadsBodyEl.innerHTML = side.uploads.map((u) => `
+          <a class="artifact-item" href="${u.url}" target="_blank" data-preview-img="${u.url}">
+            <span class="artifact-icon">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M8 2v9M4 6l4-4 4 4M2 13h12"/>
+              </svg>
+            </span>
+            <span class="artifact-title" title="${escapeHtml(u.name)}">${escapeHtml(u.name)}</span>
+          </a>
+        `).join('');
+      }
+    }
+
+    // 5. Background Tasks
+    const tasksCountEl = $('side-tasks-count');
+    const tasksBodyEl = $('side-tasks-body');
+    if (tasksCountEl) tasksCountEl.textContent = side.backgroundTasks.length;
+    if (tasksBodyEl) {
+      if (!side.backgroundTasks.length) {
+        tasksBodyEl.innerHTML = `<div class="side-sec-empty">暂无后台任务</div>`;
+      } else {
+        tasksBodyEl.innerHTML = side.backgroundTasks.map((t) => `
+          <div class="side-mini-row">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/>
+            </svg>
+            <span>${escapeHtml(t.name)}</span>
+          </div>
+        `).join('');
+      }
+    }
+
+    // 点击产物直接打开图片灯箱预览
+    artifactsBodyEl?.querySelectorAll('[data-preview-img]').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        const url = el.dataset.previewImg;
+        const title = el.dataset.title || '产物预览';
+        openLightbox(url, title);
+      });
+    });
+    uploadsBodyEl?.querySelectorAll('[data-preview-img]').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        const url = el.dataset.previewImg;
+        openLightbox(url, '上传素材预览');
+      });
+    });
   }
 
   /** 提取文件所在父目录（兼容 POSIX 与 Windows 分隔符，匹配后端 path.dirname） */
@@ -4094,20 +4239,24 @@
     $('btn-send-prompt')?.addEventListener('click', handleSendPrompt);
     $('btn-stop-stream')?.addEventListener('click', stopActiveStream);
 
-    // 右侧辅助面板 Tab 与交互
-    document.querySelectorAll('.aux-tab-btn').forEach((btn) => {
+    // 官方 Side Panel 手风琴分组展开/收起切换
+    document.querySelectorAll('.side-sec-head').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const tab = btn.dataset.auxTab;
-        state.activeAuxTab = tab;
-        document.querySelectorAll('.aux-tab-btn').forEach((b) => {
-          const active = b.dataset.auxTab === tab;
-          b.classList.toggle('is-active', active);
-          b.setAttribute('aria-selected', String(active));
-        });
-        $('aux-panel-git').hidden = tab !== 'git';
-        $('aux-panel-files').hidden = tab !== 'files';
-        $('aux-panel-cli').hidden = tab !== 'cli';
+        const sec = btn.closest('.side-accordion-sec');
+        if (!sec) return;
+        const isExp = sec.classList.toggle('is-expanded');
+        btn.setAttribute('aria-expanded', String(isExp));
+        const body = sec.querySelector('.side-sec-body');
+        if (body) body.hidden = !isExp;
       });
+    });
+
+    // 官方快捷键 Ctrl+Alt+B (或 Cmd+Alt+B) 切换右侧 Side Panel
+    window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.altKey && (e.key === 'b' || e.key === 'B')) {
+        e.preventDefault();
+        toggleAuxPane();
+      }
     });
 
     $('btn-refresh-workspace')?.addEventListener('click', loadWorkspaceOverview);
@@ -4423,6 +4572,13 @@
     { name: 'teamwork', prefix: '/', kind: 'command', icon: 'team', description: 'Autonomous multi-agent teamwork.' },
     { name: 'learn', prefix: '/', kind: 'command', icon: 'book', description: 'Persist behavior or setup for future tasks.' },
     { name: 'boost', prefix: '/', kind: 'command', icon: 'zap', description: 'Deep thinking, strategic planning, multiple perspectives.' },
+    { name: 'swarm', prefix: '/', kind: 'command', icon: 'team', description: '(Preview & Quota Heavy) Run a swarm: multiple agents working in parallel on one task via shared board.' },
+    { name: 'swarm_monitor', prefix: '/', kind: 'command', icon: 'info', description: 'Monitor swarm execution states and unstick blocked workers.' },
+    { name: 'automation', prefix: '/', kind: 'command', icon: 'clock', description: 'Interactive guide to design and create a scheduled background automation.' },
+    { name: 'plugin', prefix: '/', kind: 'command', icon: 'tool', description: 'Manage and create plugins: skills, agents, rules, MCP servers.' },
+    { name: 'context', prefix: '/', kind: 'command', icon: 'box', description: 'Inspect current conversation context token usage and distribution.' },
+    { name: 'review', prefix: '/', kind: 'command', icon: 'chat', description: 'Review git changes and workspace code quality.' },
+    { name: 'help', prefix: '/', kind: 'command', icon: 'info', description: 'List available commands and keyboard shortcuts.' },
     { name: 'status', prefix: '/', kind: 'command', icon: 'info', description: 'Show current CLI status and context statistics.' },
     { name: 'clear', prefix: '/', kind: 'command', icon: 'trash', description: 'Clear messages from display.' }
   ];

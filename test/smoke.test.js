@@ -324,6 +324,14 @@ describe('agy-remote-control 全链路冒烟测试', () => {
     assert.ok(conv.latest.speed && conv.latest.speed.tps > 0);
     assert.equal(conv.latest.errorClassification?.kind, 'none');
 
+    // 验证官方 Side Panel 聚合数据
+    assert.ok(conv.sidePanel && typeof conv.sidePanel === 'object', '应包含 sidePanel 聚合数据');
+    assert.ok(Array.isArray(conv.sidePanel.subagents), 'sidePanel 应包含 subagents 数组');
+    assert.ok(Array.isArray(conv.sidePanel.artifacts), 'sidePanel 应包含 artifacts 数组');
+    assert.ok(Array.isArray(conv.sidePanel.uploads), 'sidePanel 应包含 uploads 数组');
+    assert.ok(Array.isArray(conv.sidePanel.filesChanged), 'sidePanel 应包含 filesChanged 数组');
+    assert.ok(Array.isArray(conv.sidePanel.backgroundTasks), 'sidePanel 应包含 backgroundTasks 数组');
+
     // 不存在的会话应返回 404
     const notFoundRes = await fetch(`${baseUrl}/api/conversations/nonexistent-conv-xyz`, {
       headers: { Cookie: authCookie }
