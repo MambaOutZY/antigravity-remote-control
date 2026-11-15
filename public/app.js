@@ -344,7 +344,21 @@
     return '#';
   }
 
-  /** 渲染行内 Markdown 语法（行内代码、加粗、斜体、删除线、链接） */
+  /** 将 Markdown 图片 URL 归一化为浏览器可加载地址（自动代理 file:// 与本地路径） */
+  function resolveMarkdownImageSrc(rawUrl) {
+    const trimmed = String(rawUrl || '').trim();
+    if (!trimmed) return '';
+    if (/^data:image\/(?:png|jpeg|jpg|gif|webp|bmp);base64,/i.test(trimmed)) return trimmed;
+    if (trimmed.startsWith('/api/uploads/') || trimmed.startsWith('/api/local-image')) return trimmed;
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    if (trimmed.startsWith('file://') || /^\/(?:home|Users|tmp|var|opt|mnt)\//.test(trimmed) || /^[a-zA-Z]:[\\/]/.test(trimmed)) {
+      return `/api/local-image?path=${encodeURIComponent(trimmed)}`;
+    }
+    if (trimmed.startsWith('/')) return trimmed;
+    return '';
+  }
+
+  /** 渲染行内 Markdown 语法（行内代码、图片、链接、加粗、斜体、删除线） */
   function renderInlineMarkdown(rawText) {
     const codeSlots = [];
     // 先提取行内代码防止内部符号被二次解析
@@ -354,7 +368,16 @@
       return `\u0000CODE${idx}\u0000`;
     });
 
-    let safe = escapeHtml(withPlaceholders);
+    const imgSlots = [];
+    const withImgPlaceholders = withPlaceholders.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (full, alt, url) => {
+      const src = resolveMarkdownImageSrc(url);
+      if (!src) return full;
+      const idx = imgSlots.length;
+      imgSlots.push(`<img class="md-inline-img" src="${escapeHtml(src)}" alt="${escapeHtml(alt || '生成图片')}" loading="lazy" />`);
+      return `\u0000IMG${idx}\u0000`;
+    });
+
+    let safe = escapeHtml(withImgPlaceholders);
     safe = safe.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, url) => {
       const href = escapeHtml(sanitizeHref(url));
       return `<a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>`;
@@ -363,6 +386,7 @@
     safe = safe.replace(/~~([^~]+)~~/g, '<del>$1</del>');
     safe = safe.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
 
+    safe = safe.replace(/\u0000IMG(\d+)\u0000/g, (_, i) => imgSlots[Number(i)] || '');
     return safe.replace(/\u0000CODE(\d+)\u0000/g, (_, i) => codeSlots[Number(i)] || '');
   }
 
@@ -2402,6 +2426,18 @@
 
       // 将历史消息归一化为前端展示结构
       state.messages = normalizeHistoryMessages(conv.messages || []);
+      if (conv.latest?.speed) {
+        const lastAi = [...state.messages].reverse().find((m) => m.role === 'assistant');
+        if (lastAi && !lastAi.metrics) {
+          lastAi.metrics = {
+            tps: conv.latest.speed.tps ?? null,
+            ttft: conv.latest.speed.ttft ?? null,
+            duration: conv.latest.speed.duration ?? null,
+            outputTokens: conv.latest.speed.outputTokens ?? null,
+            model: conv.latest.model || conv.model || ''
+          };
+        }
+      }
       syncContextMetricsFromConversation(conv);
       renderConversationList();
       renderChatHeader();
@@ -3153,6 +3189,16 @@
         state.activeConversationId = payload.conversationId;
         renderChatHeader();
         updateCliPreview();
+        apiFetch(`/api/conversations/${encodeURIComponent(payload.conversationId)}`)
+          .then((res) => {
+            const conv = res?.conversation || res;
+            if (conv && state.activeConversationId === (conv.id || payload.conversationId)) {
+              syncContextMetricsFromConversation(conv);
+              renderContextView();
+            }
+          })
+          .catch(() => {});
+      }
       }
       const u = payload.usage || {};
       const outTok = payload.outputTokens ?? u.outputTokens ?? u.output ?? assistantMsg.metrics?.outputTokens ?? state.contextMetrics.outputTokens;
@@ -3954,7 +4000,13 @@
       if (await copyText(cmd)) showToast('已复制等效 CLI 命令');
     });
 
-    // 图片灯箱关闭
+    // 图片灯箱关闭与对话内图片点击放大
+    $('messages-container')?.addEventListener('click', (e) => {
+      const img = e.target.closest('.md-inline-img');
+      if (img && img.src) {
+        openLightbox(img.src, img.alt || '图片预览');
+      }
+    });
     $('btn-close-lightbox')?.addEventListener('click', closeLightbox);
     $('lightbox-modal')?.addEventListener('click', (e) => {
       if (e.target === $('lightbox-modal')) closeLightbox();

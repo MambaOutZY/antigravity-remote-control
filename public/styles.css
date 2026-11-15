@@ -1927,6 +1927,21 @@ body.aux-collapsed .aux-pane {
   background: var(--bg-subcard);
 }
 
+.md-inline-img {
+  display: block;
+  max-width: min(100%, 560px);
+  max-height: 420px;
+  width: auto;
+  height: auto;
+  margin: 10px 0;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-subcard);
+  object-fit: contain;
+  cursor: zoom-in;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+}
+
 .code-block-wrap {
   margin: 8px 0;
   border-radius: 9px;

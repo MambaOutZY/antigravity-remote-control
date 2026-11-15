@@ -749,6 +749,73 @@ function createAppServer(options = {}) {
         return;
       }
 
+      // 10.5 安全只读本地生成的图片（支持 file:// 与本地路径，严格白名单目录与扩展名）
+      if (method === 'GET' && pathname === '/api/local-image') {
+        const rawPath = String(reqUrl.searchParams.get('path') || '').trim();
+        if (!rawPath || rawPath.includes('\0')) {
+          sendJson(res, 400, { error: '无效的图片路径' });
+          return;
+        }
+        let targetPath = rawPath;
+        if (targetPath.startsWith('file://')) {
+          try {
+            targetPath = url.fileURLToPath(targetPath);
+          } catch {
+            sendJson(res, 400, { error: '无效的 file:// URL' });
+            return;
+          }
+        }
+        const resolved = path.resolve(targetPath);
+        const ext = path.extname(resolved).toLowerCase();
+        const MIME_BY_EXT = {
+          '.png': 'image/png',
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.gif': 'image/gif',
+          '.webp': 'image/webp',
+          '.bmp': 'image/bmp',
+          '.svg': 'image/svg+xml'
+        };
+        const mime = MIME_BY_EXT[ext];
+        if (!mime) {
+          sendJson(res, 403, { error: '仅允许读取常见图片格式' });
+          return;
+        }
+        const allowedRoots = [
+          path.resolve(os.homedir(), '.gemini'),
+          path.resolve(os.tmpdir()),
+          path.resolve(defaultWorkspace),
+          path.resolve(fallbackUploadBase)
+        ];
+        if (process.env.AG_DIR) allowedRoots.push(path.resolve(process.env.AG_DIR));
+        if (process.env.AG_CLI_DIR) allowedRoots.push(path.resolve(process.env.AG_CLI_DIR));
+        const isAllowed = allowedRoots.some((root) => {
+          const rel = path.relative(root, resolved);
+          return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+        });
+        if (!isAllowed) {
+          sendJson(res, 403, { error: '禁止访问授权目录之外的文件' });
+          return;
+        }
+        try {
+          const st = await fs.promises.stat(resolved);
+          if (!st.isFile() || st.size > MAX_UPLOAD_BYTES) {
+            sendJson(res, 404, { error: '图片文件不存在或超出大小限制' });
+            return;
+          }
+          const buf = await fs.promises.readFile(resolved);
+          res.writeHead(200, {
+            'Content-Type': mime,
+            'Content-Length': buf.length,
+            'Cache-Control': 'private, max-age=3600'
+          });
+          res.end(buf);
+        } catch {
+          sendJson(res, 404, { error: '图片文件不存在或无法读取' });
+        }
+        return;
+      }
+
       // 11. 安全读取已上传图片（严格防路径穿越）
       if (method === 'GET' && pathname.startsWith('/api/uploads/')) {
         const rawFile = pathname.slice('/api/uploads/'.length);
