@@ -2350,17 +2350,54 @@ body.aux-collapsed .aux-pane {
 }
 
 .composer-box {
-  border: 1px solid var(--border-strong);
-  border-radius: 12px;
-  background: var(--bg-input);
-  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  background: rgba(30, 31, 35, 0.95);
+  padding: 10px 14px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .composer-box:focus-within {
-  border-color: var(--border-focus);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* 官方输入框顶栏项目与 Git 分支胶囊 */
+.composer-meta-capsules {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.composer-capsule-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  color: #9ca3af;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.composer-capsule-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e5e7eb;
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.capsule-chevron {
+  color: #6b7280;
 }
 
 .prompt-input {
@@ -2372,6 +2409,12 @@ body.aux-collapsed .aux-pane {
   background: transparent;
   outline: none;
   line-height: 1.5;
+  color: #f3f4f6;
+  font-size: 14px;
+}
+
+.prompt-input::placeholder {
+  color: #6b7280;
 }
 
 .composer-toolbar {
@@ -2380,6 +2423,7 @@ body.aux-collapsed .aux-pane {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
+  padding-top: 4px;
 }
 
 .composer-controls-left,
@@ -2387,7 +2431,459 @@ body.aux-collapsed .aux-pane {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 官方原版 + 号添加附件圆形图标按钮 */
+.composer-icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #9ca3af;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.composer-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+/* 官方 1:1 模型选择与额度胶囊按钮 */
+.model-picker-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f3f4f6;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.model-picker-btn:hover,
+.model-picker-btn.is-active {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.24);
+  color: #ffffff;
+}
+
+.model-picker-name {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* 胶囊内的微型额度圆环与百分比徽章 */
+.model-picker-quota-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px 1px 4px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  color: #4ade80;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.model-picker-quota-badge.is-warn {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.25);
+  color: #fbbf24;
+}
+
+.model-picker-quota-badge.is-danger {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #f87171;
+}
+
+.quota-ring-mini {
+  transform: rotate(-90deg);
+  flex-shrink: 0;
+}
+
+.quota-ring-mini .ring-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 2.2;
+}
+
+.quota-ring-mini .ring-fg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-dasharray: 37.7;
+  transition: stroke-dashoffset 0.3s ease;
+}
+
+/* 权限模式胶囊 (Turbo / Auto / Plan) */
+.mode-picker-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: #9ca3af;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mode-picker-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: #e5e7eb;
+}
+
+/* 官方原版发送圆钮 (白箭头，居中) */
+.composer-send-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 0;
+  background: #ffffff;
+  color: #111827;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.16s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.composer-send-btn:hover {
+  transform: scale(1.05);
+  background: #f3f4f6;
+}
+
+.composer-send-btn:active {
+  transform: scale(0.96);
+}
+
+.composer-send-btn:disabled,
+.composer-send-btn.is-disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ============================================================================
+ * 官方 1:1 模型选择与额度浮层 (Model Switcher & View Usage Popover)
+ * ============================================================================ */
+
+.model-switcher-popover {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 20px;
+  display: flex;
+  align-items: stretch;
+  background: #17181c;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  z-index: 1200;
+  overflow: hidden;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  animation: modelPopoverFadeIn 0.14s ease-out;
+}
+
+@keyframes modelPopoverFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 主面板：Model 列表 */
+.model-popover-main {
+  width: 270px;
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.model-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px 8px;
+}
+
+.model-popover-label,
+.usage-popover-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.model-popover-hint {
+  font-size: 10.5px;
+  color: #6b7280;
+}
+
+.model-popover-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.model-popover-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.model-popover-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+}
+
+/* 单个模型项 */
+.model-popover-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 0;
+  background: transparent;
+  color: #e5e7eb;
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  user-select: none;
+}
+
+.model-popover-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.model-popover-item.is-selected {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.model-popover-item.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  color: #6b7280;
+}
+
+.model-popover-item.is-disabled:hover {
+  background: transparent;
+  color: #6b7280;
+}
+
+.model-item-title {
+  display: flex;
+  align-items: center;
   gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-item-check {
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+/* 官方 Notice 药丸徽章 */
+.model-badge-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #d1d5db;
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+/* 官方 Unavailable 灰化徽章 */
+.model-badge-unavailable {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #6b7280;
+  font-size: 10.5px;
+}
+
+.model-popover-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 6px 0;
+}
+
+/* View Usage 入口项 */
+.model-usage-trigger {
+  color: #d1d5db;
+}
+
+.model-usage-trigger .item-left,
+.model-usage-trigger .item-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.model-usage-trigger .item-icon {
+  color: #9ca3af;
+}
+
+.model-usage-trigger:hover .item-icon {
+  color: #ffffff;
+}
+
+.model-usage-trigger.is-expanded {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+/* 额度子面板：Usage */
+.model-popover-usage {
+  width: 280px;
+  padding: 12px 14px;
+  background: #141518;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.usage-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.usage-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.usage-group-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.usage-limit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 0;
+}
+
+.limit-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.limit-name {
+  font-size: 12px;
+  color: #d1d5db;
+}
+
+.limit-reset-time {
+  font-size: 11px;
+  color: #828690;
+}
+
+.limit-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.limit-pct-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: #e5e7eb;
+}
+
+/* 官方绿色环形进度条 SVG */
+.quota-ring {
+  transform: rotate(-90deg);
+  flex-shrink: 0;
+}
+
+.quota-ring .ring-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.1);
+  stroke-width: 2.8;
+}
+
+.quota-ring .ring-fg {
+  fill: none;
+  stroke: #22c55e;
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  stroke-dasharray: 56.55;
+  transition: stroke-dashoffset 0.4s ease;
+}
+
+.quota-ring .ring-fg.is-warn {
+  stroke: #f59e0b;
+}
+
+.quota-ring .ring-fg.is-danger {
+  stroke: #ef4444;
+}
+
+@media (max-width: 640px) {
+  .model-switcher-popover {
+    left: 8px;
+    right: 8px;
+    flex-direction: column;
+    max-height: 80vh;
+  }
+  .model-popover-main,
+  .model-popover-usage {
+    width: 100%;
+    border-left: 0;
+  }
+  .model-popover-usage {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
 }
 
 .tool-btn {
