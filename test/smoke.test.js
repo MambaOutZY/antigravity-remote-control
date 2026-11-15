@@ -1138,4 +1138,46 @@ describe('扩展能力：项目分组、目录浏览、账号切换与代理桥�
     const convDetailJson = await convDetailRes.json();
     assert.equal(convDetailJson.conversation.latest.budget, 524288);
   });
+
+  it('13. 对话管理：重命名、置顶排序、标记未读、归档与软删除校验', async () => {
+    // 对较旧的 cliConvId 进行重命名 + 置顶 + 未读 + 归档
+    const patchRes = await fetch(`${baseUrl}/api/conversations/${encodeURIComponent(cliConvId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: '已重命名并置顶的会话',
+        pinned: true,
+        unread: true,
+        archived: true
+      })
+    });
+    assert.equal(patchRes.status, 200);
+    const patchJson = await patchRes.json();
+    assert.equal(patchJson.ok, true);
+    assert.equal(patchJson.prefs.customTitle, '已重命名并置顶的会话');
+    assert.equal(patchJson.prefs.pinned, true);
+    assert.equal(patchJson.prefs.unread, true);
+    assert.equal(patchJson.prefs.archived, true);
+
+    // 验证列表置顶排在第一位且字段同步
+    const listRes = await fetch(`${baseUrl}/api/conversations`);
+    assert.equal(listRes.status, 200);
+    const listJson = await listRes.json();
+    assert.equal(listJson.conversations[0].id, cliConvId);
+    assert.equal(listJson.conversations[0].title, '已重命名并置顶的会话');
+    assert.equal(listJson.conversations[0].pinned, true);
+    assert.equal(listJson.conversations[0].unread, true);
+    assert.equal(listJson.conversations[0].archived, true);
+
+    // 验证软删除第二条会话后，列表不再包含且详情返回 404
+    const targetDelId = listJson.conversations[1].id;
+    const delRes = await fetch(`${baseUrl}/api/conversations/${encodeURIComponent(targetDelId)}`, {
+      method: 'DELETE'
+    });
+    assert.equal(delRes.status, 200);
+    const listAfterDel = await (await fetch(`${baseUrl}/api/conversations`)).json();
+    assert.ok(!listAfterDel.conversations.some((c) => c.id === targetDelId));
+    const detailAfterDel = await fetch(`${baseUrl}/api/conversations/${encodeURIComponent(targetDelId)}`);
+    assert.equal(detailAfterDel.status, 404);
+  });
 });

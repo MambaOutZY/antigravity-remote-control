@@ -679,6 +679,12 @@
       <div id="projects-section-header" class="projects-section-header">
         <span class="projects-section-title">Projects</span>
         <div class="projects-section-actions">
+          <button id="btn-conv-filter" class="icon-btn-xs conv-filter-btn" type="button" title="筛选会话（当前：常规）" aria-label="筛选会话">
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+              <path d="M2.5 4h11M4.5 8h7M6.5 12h3" />
+            </svg>
+            <span id="conv-filter-badge" class="conv-filter-badge" hidden></span>
+          </button>
           <button id="btn-refresh-projects" class="icon-btn-xs" type="button" title="刷新项目与会话" aria-label="刷新项目">
             <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
               <path d="M13.5 8A5.5 5.5 0 1 1 8 2.5M13.5 2.5v4h-4" />
@@ -929,6 +935,9 @@
       </div>
     </div>
   </div>
+
+  <!-- 对话管理浮动上下文菜单 -->
+  <div id="conv-context-menu" class="conv-context-menu" role="menu" hidden></div>
 
   <!-- 全局轻提示容器 -->
   <div id="toast-container" class="toast-container" aria-live="polite"></div>

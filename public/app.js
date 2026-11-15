@@ -39,6 +39,9 @@
     modes: ['auto', 'accept-edits', 'plan'],
     conversations: [],
     convSearch: '',
+    convFilter: 'active',
+    renamingConvId: null,
+    contextMenuConvId: null,
     activeConversationId: null,
     activeConversationTitle: '新建远程会话',
     activeConversationDetail: null,
@@ -2216,6 +2219,9 @@
     });
 
     (state.conversations || []).forEach((c) => {
+      if (state.convFilter === 'active' && c.archived) return;
+      if (state.convFilter === 'unread' && (!c.unread || c.archived)) return;
+      if (state.convFilter === 'archived' && !c.archived) return;
       if (kw) {
         const hay = `${c.title || ''} ${c.model || ''} ${c.id || ''} ${c.projectName || ''}`.toLowerCase();
         if (!hay.includes(kw)) return;
@@ -2234,8 +2240,8 @@
     });
 
     const groups = Array.from(groupMap.values()).filter((g) => {
-      if (kw) {
-        return g.convs.length > 0 || g.name.toLowerCase().includes(kw);
+      if (kw || state.convFilter !== 'active') {
+        return g.convs.length > 0 || (kw && g.name.toLowerCase().includes(kw));
       }
       return g.convs.length > 0 || (state.projects || []).some((p) => p.id === g.id);
     });
@@ -2276,16 +2282,56 @@
             const dotCls = isActive ? ' is-active' : (hasErr ? ' is-error' : '');
             const modelLabel = c.model || '默认模型';
             const relTime = formatRelativeCompact(c.updatedAt) || formatTimeShort(c.updatedAt);
+            const isMenuOpen = state.contextMenuConvId === c.id;
+            const isRenaming = state.renamingConvId === c.id;
+            const itemClasses = [
+              'conv-item',
+              isActive ? 'is-active' : '',
+              c.unread ? 'is-unread' : '',
+              c.archived ? 'is-archived' : '',
+              isMenuOpen ? 'is-menu-open' : ''
+            ].filter(Boolean).join(' ');
+
+            const titleNode = isRenaming
+              ? `<input class="conv-inline-rename" type="text" data-rename-input="${escapeHtml(c.id)}" value="${escapeHtml(c.title || '')}" maxlength="200" />`
+              : `<span class="conv-title" title="${escapeHtml(c.title || c.id)}">${escapeHtml(c.title || '未命名会话')}</span>`;
+
+            const pinIndicator = c.pinned
+              ? `<span class="conv-pin-badge" title="已置顶"><svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 2.5h5l-1 4.2 2 1.8v1.2H8.6v3.8L8 14.5l-.6-1V9.7H4.5V8.5l2-1.8-1-4.2z"/></svg></span>`
+              : '';
 
             return `
-              <button class="conv-item${isActive ? ' is-active' : ''}" type="button" data-conv-id="${escapeHtml(c.id)}" role="listitem">
+              <div class="${itemClasses}" data-conv-id="${escapeHtml(c.id)}" role="listitem" tabindex="0">
                 <div class="conv-item-top">
                   <div class="conv-title-wrap">
                     <span class="conv-status-dot${dotCls}"></span>
-                    <span class="conv-title" title="${escapeHtml(c.title || c.id)}">${escapeHtml(c.title || '未命名会话')}</span>
+                    ${pinIndicator}
+                    ${titleNode}
                   </div>
-                  <span class="src-badge src-${src}">${srcLabel}</span>
-                  <span class="conv-rel-time tabular-nums" title="${escapeHtml(formatTimeShort(c.updatedAt))}">${escapeHtml(relTime)}</span>
+                  <div class="conv-item-right">
+                    <span class="src-badge src-${src}">${srcLabel}</span>
+                    <span class="conv-rel-time tabular-nums" title="${escapeHtml(formatTimeShort(c.updatedAt))}">${escapeHtml(relTime)}</span>
+                    <div class="conv-quick-actions">
+                      <button class="conv-action-btn${c.archived ? ' is-on' : ''}" type="button" data-conv-archive="${escapeHtml(c.id)}" title="${c.archived ? '取消归档' : '归档会话'}" aria-label="${c.archived ? '取消归档' : '归档会话'}">
+                        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                          <rect x="2" y="2.5" width="12" height="3" rx="0.8" />
+                          <path d="M3 5.5v7.5a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5.5M6.5 8.5h3" />
+                        </svg>
+                      </button>
+                      <button class="conv-action-btn${c.pinned ? ' is-on' : ''}" type="button" data-conv-pin="${escapeHtml(c.id)}" title="${c.pinned ? '取消置顶' : '置顶会话'}" aria-label="${c.pinned ? '取消置顶' : '置顶会话'}">
+                        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M5.5 2.5h5l-1 4.2 2 1.8v1.2H8.6v3.8L8 14.5l-.6-1V9.7H4.5V8.5l2-1.8-1-4.2z"/>
+                        </svg>
+                      </button>
+                      <button class="conv-action-btn" type="button" data-conv-menu="${escapeHtml(c.id)}" title="更多操作" aria-label="更多操作">
+                        <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+                          <circle cx="8" cy="3.5" r="1.2" />
+                          <circle cx="8" cy="8" r="1.2" />
+                          <circle cx="8" cy="12.5" r="1.2" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 <div class="conv-item-meta">
                   <span class="conv-model">${escapeHtml(modelLabel)}</span>
@@ -2294,7 +2340,7 @@
                 <div class="conv-pct-track">
                   <div class="conv-pct-fill" style="width:${pct}%"></div>
                 </div>
-              </button>
+              </div>
             `;
           }).join('');
 
@@ -2336,6 +2382,9 @@
       state.activeConversationId = conv.id || convId;
       state.activeConversationTitle = conv.title || convId;
       state.activeConversationDetail = conv;
+      if (conv.unread) {
+        patchConversationPref(conv.id || convId, { unread: false }, '', true);
+      }
       if (conv.projectId) state.activeProjectId = conv.projectId;
       if (!state.workspace && (conv.workspacePath || conv.workspace)) {
         state.workspace = conv.workspacePath || conv.workspace;
@@ -3647,11 +3696,35 @@
     });
     $('btn-new-chat')?.addEventListener('click', startNewConversation);
     $('btn-refresh-convs')?.addEventListener('click', refreshConversations);
+    $('btn-conv-filter')?.addEventListener('click', cycleConvFilter);
     $('conv-search-input')?.addEventListener('input', (e) => {
       state.convSearch = e.target.value;
       renderConversationList();
     });
     $('conversation-list')?.addEventListener('click', (e) => {
+      if (e.target.closest('[data-rename-input]')) return;
+      const archiveBtn = e.target.closest('[data-conv-archive]');
+      if (archiveBtn) {
+        e.stopPropagation();
+        const cid = archiveBtn.dataset.convArchive;
+        const target = (state.conversations || []).find((c) => c.id === cid);
+        if (target) patchConversationPref(cid, { archived: !target.archived }, target.archived ? '已取消归档' : '已归档会话');
+        return;
+      }
+      const pinBtn = e.target.closest('[data-conv-pin]');
+      if (pinBtn) {
+        e.stopPropagation();
+        const cid = pinBtn.dataset.convPin;
+        const target = (state.conversations || []).find((c) => c.id === cid);
+        if (target) patchConversationPref(cid, { pinned: !target.pinned }, target.pinned ? '已取消置顶' : '已置顶会话');
+        return;
+      }
+      const menuBtn = e.target.closest('[data-conv-menu]');
+      if (menuBtn) {
+        e.stopPropagation();
+        openConvContextMenu(menuBtn.dataset.convMenu, menuBtn);
+        return;
+      }
       const toggleBtn = e.target.closest('[data-project-toggle]');
       if (toggleBtn) {
         e.stopPropagation();
@@ -3680,6 +3753,14 @@
       }
       const item = e.target.closest('[data-conv-id]');
       if (item) selectConversation(item.dataset.convId);
+    });
+    document.addEventListener('click', (e) => {
+      if (!state.contextMenuConvId) return;
+      if (e.target.closest('#conv-context-menu') || e.target.closest('[data-conv-menu]')) return;
+      closeConvContextMenu();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && state.contextMenuConvId) closeConvContextMenu();
     });
     $('btn-unbind-conv')?.addEventListener('click', () => {
       state.activeConversationId = null;
@@ -3925,9 +4006,208 @@
     if (img) img.src = '';
   }
 
+  /**
+   * 对话管理辅助函数（重命名 / 置顶 / 未读 / 归档 / 复制 / 删除 / 上下文菜单）
+   */
+  async function patchConversationPref(convId, patch, toastMsg = '', silent = false) {
+    if (!convId) return;
+    try {
+      const res = await apiFetch(`/api/conversations/${encodeURIComponent(convId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch)
+      });
+      const prefs = res.prefs || {};
+      state.conversations = (state.conversations || []).map((c) => {
+        if (c.id !== convId) return c;
+        return {
+          ...c,
+          title: prefs.customTitle || c.rawTitle || c.title,
+          pinned: Boolean(prefs.pinned),
+          unread: Boolean(prefs.unread),
+          archived: Boolean(prefs.archived)
+        };
+      });
+      state.conversations.sort((a, b) => {
+        if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+        return (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0);
+      });
+      if (state.activeConversationId === convId && prefs.customTitle) {
+        state.activeConversationTitle = prefs.customTitle;
+        const headerTitleEl = $('active-conv-title');
+        if (headerTitleEl) headerTitleEl.textContent = prefs.customTitle;
+      }
+      renderConversationList();
+      if (toastMsg && !silent) showToast(toastMsg);
+    } catch (err) {
+      if (!silent) showToast(`操作失败：${err.message}`, true);
+    }
+  }
+
+  async function deleteConversationItem(convId) {
+    if (!convId) return;
+    const target = (state.conversations || []).find((c) => c.id === convId);
+    const label = target?.title || convId;
+    if (!window.confirm(`确认删除会话「${label}」？\n（仅从控制台列表移除，不会破坏本机原始日志文件）`)) {
+      return;
+    }
+    try {
+      await apiFetch(`/api/conversations/${encodeURIComponent(convId)}`, { method: 'DELETE' });
+      state.conversations = (state.conversations || []).filter((c) => c.id !== convId);
+      if (state.activeConversationId === convId) {
+        startNewConversation();
+      } else {
+        renderConversationList();
+      }
+      showToast('已删除会话');
+    } catch (err) {
+      showToast(`删除失败：${err.message}`, true);
+    }
+  }
+
+  function startInlineRename(convId) {
+    if (!convId) return;
+    state.renamingConvId = convId;
+    renderConversationList();
+    const input = document.querySelector(`[data-rename-input="${CSS.escape(convId)}"]`);
+    if (!input) return;
+    input.focus();
+    input.select();
+
+    let finished = false;
+    const finish = async (commit) => {
+      if (finished) return;
+      finished = true;
+      const nextVal = input.value.trim();
+      state.renamingConvId = null;
+      if (commit) {
+        await patchConversationPref(convId, { title: nextVal }, nextVal ? '已重命名会话' : '已恢复默认标题');
+      } else {
+        renderConversationList();
+      }
+    };
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        finish(true);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        finish(false);
+      }
+    });
+    input.addEventListener('blur', () => finish(true));
+  }
+
+  function cycleConvFilter() {
+    const order = ['active', 'unread', 'archived'];
+    const next = order[(order.indexOf(state.convFilter) + 1) % order.length];
+    state.convFilter = next;
+    const badge = $('conv-filter-badge');
+    const btn = $('btn-conv-filter');
+    const labelMap = { active: '', unread: '未读', archived: '归档' };
+    const titleMap = { active: '筛选会话（当前：常规）', unread: '筛选会话（当前：仅未读）', archived: '筛选会话（当前：已归档）' };
+    if (badge) {
+      badge.textContent = labelMap[next] || '';
+      badge.hidden = !labelMap[next];
+    }
+    if (btn) btn.title = titleMap[next] || '筛选会话';
+    renderConversationList();
+  }
+
+  function closeConvContextMenu() {
+    const menu = $('conv-context-menu');
+    if (menu) {
+      menu.hidden = true;
+      menu.innerHTML = '';
+    }
+    if (state.contextMenuConvId) {
+      state.contextMenuConvId = null;
+      renderConversationList();
+    }
+  }
+
+  function openConvContextMenu(convId, anchorEl) {
+    const menu = $('conv-context-menu');
+    const conv = (state.conversations || []).find((c) => c.id === convId);
+    if (!menu || !conv) return;
+
+    if (state.contextMenuConvId === convId && !menu.hidden) {
+      closeConvContextMenu();
+      return;
+    }
+
+    state.contextMenuConvId = convId;
+    renderConversationList();
+
+    menu.innerHTML = `
+      <button class="conv-menu-item" type="button" data-menu-action="rename">
+        <span>✏️</span><span>Rename</span>
+      </button>
+      <button class="conv-menu-item" type="button" data-menu-action="pin">
+        <span>📌</span><span>${conv.pinned ? 'Unpin' : 'Pin'}</span>
+      </button>
+      <button class="conv-menu-item" type="button" data-menu-action="unread">
+        <span>💬</span><span>${conv.unread ? 'Mark Read' : 'Mark Unread'}</span>
+      </button>
+      <div class="conv-submenu-wrap">
+        <button class="conv-menu-item" type="button" data-menu-action="copy-toggle">
+          <span>📋</span><span>Copy</span><span class="conv-menu-arrow">▸</span>
+        </button>
+        <div class="conv-submenu">
+          <button class="conv-menu-item" type="button" data-menu-action="copy-title"><span>Copy Title</span></button>
+          <button class="conv-menu-item" type="button" data-menu-action="copy-id"><span>Copy ID</span></button>
+          <button class="conv-menu-item" type="button" data-menu-action="copy-link"><span>Copy Link</span></button>
+        </div>
+      </div>
+      <div class="conv-menu-sep"></div>
+      <button class="conv-menu-item" type="button" data-menu-action="archive">
+        <span>📥</span><span>${conv.archived ? 'Unarchive' : 'Archive'}</span>
+      </button>
+      <button class="conv-menu-item is-danger" type="button" data-menu-action="delete">
+        <span>🗑️</span><span>Delete</span>
+      </button>
+    `;
+
+    menu.hidden = false;
+    const rect = anchorEl.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const left = Math.min(window.innerWidth - menuRect.width - 12, Math.max(8, rect.right - 12));
+    const top = Math.min(window.innerHeight - menuRect.height - 12, Math.max(8, rect.bottom + 4));
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+
+    menu.onclick = async (ev) => {
+      const btn = ev.target.closest('[data-menu-action]');
+      if (!btn) return;
+      const action = btn.dataset.menuAction;
+      if (action === 'copy-toggle') {
+        btn.parentElement?.classList.toggle('is-open');
+        return;
+      }
+      closeConvContextMenu();
+      if (action === 'rename') startInlineRename(convId);
+      else if (action === 'pin') await patchConversationPref(convId, { pinned: !conv.pinned }, conv.pinned ? '已取消置顶' : '已置顶会话');
+      else if (action === 'unread') await patchConversationPref(convId, { unread: !conv.unread }, conv.unread ? '已标记为已读' : '已标记为未读');
+      else if (action === 'archive') await patchConversationPref(convId, { archived: !conv.archived }, conv.archived ? '已取消归档' : '已归档会话');
+      else if (action === 'delete') await deleteConversationItem(convId);
+      else if (action === 'copy-title') {
+        if (await copyText(conv.title || conv.id)) showToast('已复制会话标题');
+      } else if (action === 'copy-id') {
+        if (await copyText(conv.id)) showToast('已复制会话 ID');
+      } else if (action === 'copy-link') {
+        const deepLink = `${window.location.origin}${window.location.pathname}?conv=${encodeURIComponent(conv.id)}`;
+        if (await copyText(deepLink)) showToast('已复制会话直达链接');
+      }
+    };
+  }
+
   // 启动入口
-  document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', async () => {
     bindGlobalEvents();
-    loadBootstrap();
+    await loadBootstrap();
+    const urlConv = new URLSearchParams(window.location.search).get('conv');
+    if (urlConv) {
+      selectConversation(urlConv);
+    }
   });
 })();

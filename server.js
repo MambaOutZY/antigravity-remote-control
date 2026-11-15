@@ -344,7 +344,8 @@ function createAppServer(options = {}) {
     agCliDir: options.agCliDir !== undefined ? options.agCliDir : (process.env.AG_CLI_DIR || undefined),
     geminiConfigDir: options.geminiConfigDir !== undefined ? options.geminiConfigDir : undefined,
     projectsStore: options.projectsStore !== undefined ? options.projectsStore : undefined,
-    modelCtxFile: options.modelCtxFile !== undefined ? options.modelCtxFile : undefined
+    modelCtxFile: options.modelCtxFile !== undefined ? options.modelCtxFile : undefined,
+    conversationPrefsStore: options.conversationPrefsStore !== undefined ? options.conversationPrefsStore : undefined
   });
 
   // 透传 switch-bridge 路径与测试 Mock 配置（未传时内部自动回退环境变量与默认路径）
@@ -541,8 +542,8 @@ function createAppServer(options = {}) {
         return;
       }
 
-      // 7. 会话详情
-      if (method === 'GET' && pathname.startsWith('/api/conversations/')) {
+      // 7. 会话详情与会话管理（GET / PATCH 重命名置顶未读归档 / DELETE 删除）
+      if ((method === 'GET' || method === 'PATCH' || method === 'DELETE') && pathname.startsWith('/api/conversations/')) {
         const rawId = pathname.slice('/api/conversations/'.length);
         let convId = '';
         try {
@@ -556,13 +557,28 @@ function createAppServer(options = {}) {
           return;
         }
 
-        const detail = meterEngine.getConversationDetail(convId, getMeterOpts());
-        if (!detail) {
-          sendJson(res, 404, { error: '未找到指定会话记录' });
+        if (method === 'GET') {
+          const detail = meterEngine.getConversationDetail(convId, getMeterOpts());
+          if (!detail) {
+            sendJson(res, 404, { error: '未找到指定会话记录' });
+            return;
+          }
+          sendJson(res, 200, { conversation: detail });
           return;
         }
-        sendJson(res, 200, { conversation: detail });
-        return;
+
+        if (method === 'PATCH') {
+          const body = await readJsonBody(req);
+          const prefs = meterEngine.updateConversationPrefs(convId, body, getMeterOpts());
+          sendJson(res, 200, { ok: true, id: convId, prefs });
+          return;
+        }
+
+        if (method === 'DELETE') {
+          meterEngine.deleteConversationPref(convId, getMeterOpts());
+          sendJson(res, 200, { ok: true, id: convId });
+          return;
+        }
       }
 
       // 8. 流式对话 (SSE，禁用缓冲以兼容 Lucky/Nginx 反代)
