@@ -275,7 +275,100 @@ sudo loginctl enable-linger "$USER"
 
 ---
 
-## 五、环境变量说明
+## 五、多账号管理与一键切换（Multi-Account Switching）
+
+本项目内置了兼容 `cockpit-tools` 与 `antigravity-switch` 布局的**多账号秒级热切换能力**。无需手动登录登出或修改底层配置，只需将各个账号的 JSON 凭证文件存放到指定目录，即可在 Web 控制台的配置抽屉或顶部快速查看账号列表、当前生效状态并一键切换。
+
+### 1. 账号 JSON 文件存放路径
+
+系统按以下优先级与规则自动扫描账号 JSON 文件（忽略以 `.` 开头的隐藏文件）：
+
+1. **默认目录**：
+   ```bash
+   /home/antigravity-switch/account/*.json
+   ```
+2. **自定义路径（通过环境变量配置）**：
+   - `AGY_ACCOUNTS_DIR`：直接指定账号 JSON 所在目录（例如 `AGY_ACCOUNTS_DIR=/home/zhangyu/.config/agy-remote/accounts`）。
+   - `AGY_SWITCH_DIR`：指定 switch 根目录（默认 `/home/antigravity-switch`），系统会自动扫描其子目录 `$AGY_SWITCH_DIR/account/`。
+
+> **命名建议**：推荐以账号邮箱或易记的别名命名文件名，例如：
+> - `main-user@gmail.com.json`
+> - `work-enterprise@company.com.json`
+> - `backup-account.json`
+
+---
+
+### 2. 账号 JSON 文件格式与字段说明
+
+账号 JSON 文件的核心作用是向 Google OAuth 端点自动刷新获取最新的 `access_token`。系统完全兼容以下两种标准格式：
+
+#### 格式 A：标准扁平格式（推荐）
+```json
+{
+  "email": "your_email@gmail.com",
+  "refresh_token": "1//04xxxxxxxxxxxxxxxxxxxxxxx_your_oauth_refresh_token",
+  "project_id": "your-gcp-project-id",
+  "id_token": "eyJhbGciOiJSUzI1NiIs..."
+}
+```
+
+#### 格式 B：带 token 嵌套对象格式（兼容官方生成的 token 文件）
+```json
+{
+  "email": "your_email@gmail.com",
+  "project_id": "your-gcp-project-id",
+  "token": {
+    "access_token": "ya29.a0xxxxxxxx...",
+    "refresh_token": "1//04xxxxxxxxxxxxxxxxxxxxxxx_your_oauth_refresh_token",
+    "token_type": "Bearer",
+    "expiry": "2026-11-16T00:00:00.000Z"
+  }
+}
+```
+
+#### 字段含义：
+| 字段名 | 是否必需 | 说明 |
+| :--- | :---: | :--- |
+| `refresh_token` | **必需** | Google OAuth Refresh Token，控制台通过它自动刷新换取有效的 `access_token` |
+| `email` | 可选 | 账号邮箱标识（若未提供，系统会自动从 `id_token` 解密提取或根据文件名推导） |
+| `project_id` | 可选 | 关联的 Google Cloud 项目 ID（如 Cloud AI Companion / Vertex 绑定的项目） |
+| `id_token` | 可选 | Google 签发的身份 JWT，用于安全提取和核验用户邮箱 |
+
+---
+
+### 3. 如何导出并保存已有账号凭据
+
+如果你已经在 Ubuntu 本机上通过 `agy` 登录过某个账号，可以直接将其当前有效的凭证保存为账号库中的一员：
+
+```bash
+# 1. 创建账号保存目录
+sudo mkdir -p /home/antigravity-switch/account
+sudo chown -R $USER:$USER /home/antigravity-switch
+
+# 2. 拷贝当前登录态凭据并重命名为对应邮箱
+cp ~/.gemini/antigravity-cli/antigravity-oauth-token /home/antigravity-switch/account/my_account@gmail.com.json
+
+# 3. 登录下一个新账号
+agy auth login
+
+# 4. 再次保存为第二个账号
+cp ~/.gemini/antigravity-cli/antigravity-oauth-token /home/antigravity-switch/account/second_account@gmail.com.json
+```
+
+---
+
+### 4. 账号切换生效机制
+
+在 Web 控制台点击任意账号卡片上的 **「切换」**：
+1. **自动刷新**：服务端经配置的本地网络代理向 Google OAuth Token Endpoint 请求最新的 `access_token`；
+2. **原子写入**：自动将最新凭据以严格 `0o600` 文件权限原子写入宿主机生效路径：
+   - 主路径：`~/.gemini/antigravity-cli/antigravity-oauth-token`
+   - 备用兼容路径：`~/.gemini/jetski-standalone-oauth-token`
+3. **零重启生效**：服务端自动清空模型列表与子进程凭证缓存，下一次发起对话即刻使用新账号的配额与额度，无需重启后台服务。
+
+---
+
+## 六、环境变量说明
 
 | 变量名 | 默认值 | 说明 |
 | :--- | :--- | :--- |
@@ -284,12 +377,14 @@ sudo loginctl enable-linger "$USER"
 | `AGY_AUTH_PASSWORD` | 空（不鉴权） | Web 访问密码，设置后开启 Cookie/Token 登录保护 |
 | `DEFAULT_WORKSPACE` | 当前工作目录/家目录 | 页面初始默认工作区路径 |
 | `AGY_BIN` | 自动探测 | 显式指定 `agy` 或 `agy-real` 可执行文件绝对路径 |
+| `AGY_SWITCH_DIR` | `/home/antigravity-switch` | 账号管理与 switch 根目录，账号存放于其 `account/` 子目录下 |
+| `AGY_ACCOUNTS_DIR` | `$AGY_SWITCH_DIR/account` | 显式指定账号 JSON 存放目录 |
 | `AG_DIR` | `~/.gemini/antigravity` | 桌面端会话日志与配置目录覆盖（测试/多目录场景） |
 | `AG_CLI_DIR` | `~/.gemini/antigravity-cli` | CLI 会话日志目录覆盖 |
 
 ---
 
-## 六、自动化测试与安全提醒
+## 七、自动化测试与安全提醒
 
 ### 运行内置自动化测试
 本项目使用 Node.js 内置 `node:test` 编写全流程冒烟测试（鉴权、会话解析、52 周热力图与账单、1×1 PNG 图片上传与下载回读、SSE 流式接口、静态资源零 CDN 校验）：
@@ -303,11 +398,11 @@ node --test test/smoke.test.js
 ### 安全使用建议
 1. **公网暴露必设密码**：任何穿透到公网的部署都务必设置高强度 `AGY_AUTH_PASSWORD`，并优先配合 HTTPS + Zero Trust Access / BasicAuth。
 2. **慎用 `--dangerously-skip-permissions`**：该开关允许模型在未人工二次确认的情况下执行工作区命令/修改文件，建议仅在受控隔离项目中使用。
-3. **定期检查登录态**：若发现诊断徽章提示认证错误，在 Ubuntu 终端重新执行 `agy auth login`（或重新登录）即可立即恢复配额与调用能力。
+3. **定期检查登录态**：若发现诊断徽章提示认证错误，在 Ubuntu 终端重新执行 `agy auth login`（或在控制台一键切换账号）即可立即恢复配额与调用能力。
 
 ---
 
-## 七、鸣谢与致敬
+## 八、鸣谢与致敬
 
 本项目在设计与实现过程中参考了以下优秀开源项目的思路与代码实现，特此诚挚致谢：
 

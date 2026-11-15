@@ -119,7 +119,79 @@ curl -s http://127.0.0.1:8787/api/health
 
 ---
 
-## 5. Environment Variables
+## 5. Multi-Account Management & Switching
+
+The project provides built-in multi-account hot switching compatible with `cockpit-tools` and `antigravity-switch` directory layouts. You can inspect all available accounts and switch seamlessly from the Web UI without re-authenticating on the terminal.
+
+### 1. Account JSON Storage Location
+
+The system automatically scans for account JSON files (ignoring hidden files starting with `.`) in the following order:
+
+1. **Default Path**:
+   ```bash
+   /home/antigravity-switch/account/*.json
+   ```
+2. **Environment Variable Overrides**:
+   - `AGY_ACCOUNTS_DIR`: Directly specify the folder holding account JSON files (e.g., `AGY_ACCOUNTS_DIR=/home/user/.config/agy-remote/accounts`).
+   - `AGY_SWITCH_DIR`: Set the root switch directory (default: `/home/antigravity-switch`), which causes the app to scan `$AGY_SWITCH_DIR/account/`.
+
+> **File Naming**: We recommend naming the files after the account email or alias, e.g. `main@gmail.com.json` or `work-account.json`.
+
+### 2. Account JSON Schema
+
+The account JSON files are used to exchange a fresh `access_token` from Google's OAuth token endpoint. Both flat and nested `token` structures are supported:
+
+#### Format A: Standard Flat Format (Recommended)
+```json
+{
+  "email": "your_email@gmail.com",
+  "refresh_token": "1//04xxxxxxxxxxxxxxxxxxxxxxx_your_oauth_refresh_token",
+  "project_id": "your-gcp-project-id",
+  "id_token": "eyJhbGciOiJSUzI1NiIs..."
+}
+```
+
+#### Format B: Nested Token Object Format (Compatible with official CLI token export)
+```json
+{
+  "email": "your_email@gmail.com",
+  "project_id": "your-gcp-project-id",
+  "token": {
+    "access_token": "ya29.a0xxxxxxxx...",
+    "refresh_token": "1//04xxxxxxxxxxxxxxxxxxxxxxx_your_oauth_refresh_token",
+    "token_type": "Bearer",
+    "expiry": "2026-11-16T00:00:00.000Z"
+  }
+}
+```
+
+| Field | Required | Description |
+| :--- | :---: | :--- |
+| `refresh_token` | **Yes** | Google OAuth Refresh Token used to fetch new active `access_token`s automatically |
+| `email` | Optional | Account email address (derived from `id_token` or file name if omitted) |
+| `project_id` | Optional | Associated GCP Project ID (e.g., Cloud AI Companion / Vertex) |
+| `id_token` | Optional | OpenID Connect JWT token used to verify identity and email |
+
+### 3. How to Export & Store an Existing Account
+
+```bash
+# 1. Create the account directory
+sudo mkdir -p /home/antigravity-switch/account
+sudo chown -R $USER:$USER /home/antigravity-switch
+
+# 2. Copy current active credentials as your first account
+cp ~/.gemini/antigravity-cli/antigravity-oauth-token /home/antigravity-switch/account/account_1@gmail.com.json
+
+# 3. Log in to your second account
+agy auth login
+
+# 4. Copy current active credentials as your second account
+cp ~/.gemini/antigravity-cli/antigravity-oauth-token /home/antigravity-switch/account/account_2@gmail.com.json
+```
+
+---
+
+## 6. Environment Variables
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
@@ -128,12 +200,14 @@ curl -s http://127.0.0.1:8787/api/health
 | `AGY_AUTH_PASSWORD` | Empty (disabled) | Web login password (enables HMAC-SHA256 Cookie/token auth) |
 | `DEFAULT_WORKSPACE` | CWD / Home dir | Default workspace path shown in the UI |
 | `AGY_BIN` | Auto-detect | Explicit path to `agy` or `agy-real` executable |
+| `AGY_SWITCH_DIR` | `/home/antigravity-switch` | Root directory for switch tools; accounts scanned under `account/` |
+| `AGY_ACCOUNTS_DIR` | `$AGY_SWITCH_DIR/account` | Explicit directory for account JSON files |
 | `AG_DIR` | `~/.gemini/antigravity` | Override Desktop session logs directory |
 | `AG_CLI_DIR` | `~/.gemini/antigravity-cli` | Override CLI session logs directory |
 
 ---
 
-## 6. Testing & License
+## 7. Testing & License
 
 Run the built-in smoke tests (zero external dependencies):
 
@@ -147,7 +221,7 @@ Licensed under the [MIT License](./LICENSE).
 
 ---
 
-## 7. Acknowledgements
+## 8. Acknowledgements
 
 This project draws inspiration and code references from the following open-source projects. Special thanks to their authors and contributors:
 
