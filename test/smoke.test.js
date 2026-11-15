@@ -465,6 +465,10 @@ describe('agy-remote-control 全链路冒烟测试', () => {
     const jsText = await jsRes.text();
 
     assert.ok(htmlText.length > 100 && cssText.length > 100 && jsText.length > 100);
+    assert.doesNotThrow(() => {
+      // 语法合法性校验，避免前端脚本因语法错误导致全站点击失效
+      new Function(jsText);
+    }, 'app.js 脚本存在语法错误');
     assert.ok(!/https?:\/\//i.test(htmlText), 'index.html 不得包含任何 http:// 或 https:// 外部链接');
     assert.ok(!/<(?:script|link)\b[^>]+(?:src|href)\s*=\s*["']https?:\/\//i.test(htmlText));
   });

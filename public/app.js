@@ -3199,7 +3199,6 @@
           })
           .catch(() => {});
       }
-      }
       const u = payload.usage || {};
       const outTok = payload.outputTokens ?? u.outputTokens ?? u.output ?? assistantMsg.metrics?.outputTokens ?? state.contextMetrics.outputTokens;
       const totalUsed = u.totalTokens ?? u.actual ?? ((u.inputTokens || 0) + (u.cacheReadTokens || 0) + (u.outputTokens || 0));
