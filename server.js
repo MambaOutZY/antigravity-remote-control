@@ -532,7 +532,7 @@ function createAppServer(options = {}) {
       // 5.5 官方指令与提及列表（供 / 与 @ 呼出补全）
       if (method === 'GET' && pathname === '/api/commands') {
         const cmdData = getRegisteredCommands({ homeDir: os.homedir() });
-        sendJson(res, 200, { ok: true, ...cmdData });
+        sendJson(res, 200, { ok: true, commands: cmdData, ...cmdData });
         return;
       }
 
