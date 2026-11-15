@@ -1,0 +1,15 @@
+{
+  "name": "agy-remote-control",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Antigravity CLI (agy) 私有远程控制台与上下文用量监控看板（零外部依赖）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/smoke.test.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

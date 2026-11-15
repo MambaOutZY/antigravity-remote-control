@@ -1,0 +1,10 @@
+# 运行时上传附件与本地会话归档
+.agy_uploads/
+.gemini/
+MEMORY.md
+
+# 环境配置与日志
+.env
+*.log
+*.bak
+node_modules/

@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>AGY Remote 私有控制台</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- 移动端侧栏遮罩层 -->
+  <div id="mobile-backdrop" class="mobile-backdrop" hidden></div>
+
+  <!-- 顶部导航栏：品牌状态 + Context Viewer 双胶囊 + 全局工具 -->
+  <header class="topbar" role="banner">
+    <div class="topbar-left">
+      <button id="btn-toggle-left-drawer" class="icon-btn mobile-only-btn" type="button" title="打开会话列表" aria-label="打开会话列表">
+        <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <path d="M3 5h14M3 10h14M3 15h14" />
+        </svg>
+      </button>
+
+      <!-- 品牌标识 -->
+      <div class="brand">
+        <span class="brand-logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+            <defs>
+              <linearGradient id="agyBrandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#8b5cf6" />
+                <stop offset="100%" stop-color="#38bdf8" />
+              </linearGradient>
+            </defs>
+            <rect x="2" y="2" width="20" height="20" rx="6" fill="url(#agyBrandGrad)" opacity="0.18" stroke="url(#agyBrandGrad)" stroke-width="1.5" />
+            <path d="M12 6.5L16.5 17H14.2L13.2 14.5H10.8L9.8 17H7.5L12 6.5ZM12 9.8L11.2 12.6H12.8L12 9.8Z" fill="url(#agyBrandGrad)" />
+          </svg>
+        </span>
+        <span class="brand-title">AGY Remote 私有控制台</span>
+      </div>
+
+      <!-- agy 连接状态指示灯 -->
+      <div id="agy-status-pill" class="status-pill is-demo" title="正在探测本机 agy CLI 状态">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="agy-status-text">检测中…</span>
+      </div>
+
+      <!-- 当前工作区路径标签 -->
+      <button id="topbar-workspace-badge" class="workspace-badge" type="button" title="点击复制当前工作区路径">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1.5 3.5h4.2l1.3 1.5h7.5v8h-13z" />
+        </svg>
+        <span id="topbar-workspace-path">未选择工作区</span>
+      </button>
+    </div>
+
+    <div class="topbar-right">
+      <!-- 胶囊 1：上下文与速度监控 -->
+      <button id="capsule-context" class="meter-capsule" type="button" aria-expanded="false" aria-controls="panel-context" title="点击展开会话上下文明细与窗口解锁面板">
+        <svg class="ring-svg" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+          <circle class="ring-track" cx="10" cy="10" r="7" fill="none" stroke-width="2.4" />
+          <circle id="capsule-ring-fill" class="ring-fill" cx="10" cy="10" r="7" fill="none" stroke-width="2.4" stroke-linecap="round" transform="rotate(-90 10 10)" stroke-dasharray="43.98" stroke-dashoffset="43.98" />
+        </svg>
+        <span id="capsule-ctx-text" class="capsule-primary tabular-nums">-- / 256K (0%)</span>
+        <span class="capsule-sep" aria-hidden="true">·</span>
+        <span id="capsule-speed-text" class="capsule-speed tabular-nums">-- tok/s · --s</span>
+        <span id="capsule-error-badge" class="diag-badge diag-none">正常</span>
+      </button>
+
+      <!-- 胶囊 2：Token 历史与 API 账单 -->
+      <button id="capsule-history" class="meter-capsule meter-capsule-accent" type="button" aria-expanded="false" aria-controls="panel-history" title="点击展开 52 周 Token 热力图与 API 等值账单">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M2.5 13.5V9.5M6.2 13.5V5.5M9.8 13.5V7.5M13.5 13.5V2.5" />
+        </svg>
+        <span id="capsule-history-text" class="capsule-primary tabular-nums">统计与账单</span>
+      </button>
+
+      <!-- 快捷配置按钮（直接打开配置 Tab） -->
+      <button id="btn-open-settings" class="icon-btn" type="button" title="系统配置（账号切换与 CLI 代理）" aria-label="打开系统配置">
+        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="10" cy="10" r="2.6" />
+          <path d="M10 2.6v1.6M10 15.8v1.6M2.6 10h1.6M15.8 10h1.6M4.8 4.8l1.1 1.1M14.1 14.1l1.1 1.1M15.2 4.8l-1.1 1.1M5.9 14.1l-1.1 1.1" />
+        </svg>
+      </button>
+
+      <!-- 主题切换按钮 -->
+      <button id="btn-theme-toggle" class="icon-btn" type="button" title="切换深色 / 浅色主题" aria-label="切换深色或浅色主题">
+        <svg id="icon-theme-sun" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" hidden>
+          <circle cx="10" cy="10" r="3.5" />
+          <path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M15.3 4.7l-1.4 1.4M6.1 13.9l-1.4 1.4" />
+        </svg>
+        <svg id="icon-theme-moon" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16.5 11.8A6.8 6.8 0 0 1 8.2 3.5a6.8 6.8 0 1 0 8.3 8.3z" />
+        </svg>
+      </button>
+
+      <!-- 折叠/展开右侧辅助面板按钮 -->
+      <button id="btn-toggle-aux" class="icon-btn" type="button" title="展开/收起右侧辅助面板" aria-label="展开或收起右侧辅助面板" aria-pressed="true">
+        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2.5" y="3.5" width="15" height="13" rx="2" />
+          <path d="M12.5 3.5v13" />
+        </svg>
+      </button>
+
+      <!-- 退出登录按钮（仅启用鉴权后显示） -->
+      <button id="btn-logout" class="icon-btn" type="button" title="退出登录" aria-label="退出登录" hidden>
+        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 3.5H4.5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1H8M13 13.5l3.5-3.5L13 6.5M16.5 10H8" />
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- 悬浮面板 1：会话上下文、模型设置、速度对比与系统配置（4 Tab 结构） -->
+  <section id="panel-context" class="popover-panel popover-context" hidden role="dialog" aria-label="会话上下文与系统配置面板">
+    <div class="panel-header">
+      <div class="panel-title-group">
+        <span class="panel-title">上下文监控与配置</span>
+        <span id="ctx-panel-model-pill" class="chip-muted">未选模型</span>
+      </div>
+      <div class="panel-actions">
+        <button id="btn-refresh-context-panel" class="mini-btn" type="button" title="刷新当前面板数据">刷新</button>
+        <button id="btn-close-context-panel" class="icon-btn-sm" type="button" aria-label="关闭面板">×</button>
+      </div>
+    </div>
+
+    <!-- 4 个子视图 Tab 导航栏 -->
+    <div id="ctx-panel-tabs" class="panel-tabs" role="tablist" aria-label="上下文面板视图切换">
+      <button id="ctx-tab-current" class="panel-tab-btn is-active" type="button" data-ctx-tab="current" role="tab" aria-selected="true">当前会话</button>
+      <button id="ctx-tab-models" class="panel-tab-btn" type="button" data-ctx-tab="models" role="tab" aria-selected="false">模型设置</button>
+      <button id="ctx-tab-speed" class="panel-tab-btn" type="button" data-ctx-tab="speed" role="tab" aria-selected="false">速度对比</button>
+      <button id="ctx-tab-config" class="panel-tab-btn" type="button" data-ctx-tab="config" role="tab" aria-selected="false">配置</button>
+    </div>
+
+    <div class="panel-body">
+      <!-- Tab 1：当前会话 -->
+      <div id="ctx-pane-current" class="panel-tab-pane" role="tabpanel">
+        <!-- 错误诊断告警条 -->
+        <div id="ctx-error-banner" class="error-banner" hidden>
+          <div class="error-banner-head">
+            <span id="ctx-error-title" class="error-banner-title">异常诊断</span>
+            <span id="ctx-error-kind" class="diag-badge">—</span>
+          </div>
+          <div id="ctx-error-detail" class="error-banner-detail"></div>
+          <div id="ctx-error-diagnostic" class="error-banner-code" hidden></div>
+        </div>
+
+        <!-- 服务端实测 vs 本地估算 + 实时速度 -->
+        <div class="ctx-overview-grid">
+          <div class="panel-card">
+            <div class="card-head">
+              <span class="card-title">服务端实测 vs 本地估算</span>
+              <span id="ctx-used-pct-badge" class="chip-accent tabular-nums">0%</span>
+            </div>
+            <div class="progress-track">
+              <div id="ctx-main-progress-fill" class="progress-fill" style="width: 0%"></div>
+            </div>
+            <div class="metric-kv-grid">
+              <div class="metric-kv">
+                <span class="metric-k">服务端实测</span>
+                <strong id="ctx-actual-val" class="metric-v tabular-nums">—</strong>
+              </div>
+              <div class="metric-kv">
+                <span class="metric-k">本地文本估算</span>
+                <strong id="ctx-estimate-val" class="metric-v tabular-nums">—</strong>
+              </div>
+              <div class="metric-kv">
+                <span class="metric-k">当前窗口预算</span>
+                <strong id="ctx-budget-val" class="metric-v tabular-nums">256,000</strong>
+              </div>
+              <div class="metric-kv">
+                <span class="metric-k">剩余空间</span>
+                <strong id="ctx-remaining-val" class="metric-v tabular-nums">—</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="card-head">
+              <span class="card-title">实时推理速度与延迟</span>
+              <span id="ctx-speed-status" class="chip-muted">待生成</span>
+            </div>
+            <div class="metric-kv-grid">
+              <div class="metric-kv">
+                <span class="metric-k">输出速率 (TPS)</span>
+                <strong id="ctx-tps-val" class="metric-v tabular-nums">—</strong>
+              </div>
+              <div class="metric-kv">
+                <span class="metric-k">首字延迟 (TTFT)</span>
+                <strong id="ctx-ttft-val" class="metric-v tabular-nums">—</strong>
+              </div>
+              <div class="metric-kv">
+                <span class="metric-k">总耗时</span>
+                <strong id="ctx-duration-val" class="metric-v tabular-nums">—</strong>
+              </div>
+              <div class="metric-kv">
+                <span class="metric-k">最近输出</span>
+                <strong id="ctx-output-tok-val" class="metric-v tabular-nums">—</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 最近轮次指标明细 -->
+        <div id="ctx-recent-turns-card" class="panel-card">
+          <div class="card-head">
+            <span class="card-title">最近轮次推理指标</span>
+            <span id="ctx-recent-turns-count" class="card-sub tabular-nums">0 轮</span>
+          </div>
+          <div id="ctx-recent-turns-list" class="recent-turns-list">
+            <div class="empty-placeholder-sm">当前会话暂无最近轮次测速数据</div>
+          </div>
+        </div>
+
+        <!-- 5 维上下文占用进度条 -->
+        <div class="panel-card">
+          <div class="card-head">
+            <span class="card-title">5 维上下文占用构成（本地可读取归档估算）</span>
+            <span id="ctx-total-chars" class="card-sub tabular-nums">0 字符</span>
+          </div>
+          <div id="ctx-five-dims" class="five-dim-list">
+            <div class="dim-row" data-dim="user">
+              <div class="dim-meta"><span>提示词（用户消息）</span><span class="dim-val tabular-nums" id="dim-val-user">0 tok (0%)</span></div>
+              <div class="dim-bar-track"><div class="dim-bar-fill dim-user" id="dim-bar-user" style="width:0%"></div></div>
+            </div>
+            <div class="dim-row" data-dim="assistant">
+              <div class="dim-meta"><span>模型回复</span><span class="dim-val tabular-nums" id="dim-val-assistant">0 tok (0%)</span></div>
+              <div class="dim-bar-track"><div class="dim-bar-fill dim-assistant" id="dim-bar-assistant" style="width:0%"></div></div>
+            </div>
+            <div class="dim-row" data-dim="thinking">
+              <div class="dim-meta"><span>思考过程 (Thinking)</span><span class="dim-val tabular-nums" id="dim-val-thinking">0 tok (0%)</span></div>
+              <div class="dim-bar-track"><div class="dim-bar-fill dim-thinking" id="dim-bar-thinking" style="width:0%"></div></div>
+            </div>
+            <div class="dim-row" data-dim="tools">
+              <div class="dim-meta"><span>工具调用与输出</span><span class="dim-val tabular-nums" id="dim-val-tools">0 tok (0%)</span></div>
+              <div class="dim-bar-track"><div class="dim-bar-fill dim-tools" id="dim-bar-tools" style="width:0%"></div></div>
+            </div>
+            <div class="dim-row" data-dim="summaries">
+              <div class="dim-meta"><span>压缩摘要</span><span class="dim-val tabular-nums" id="dim-val-summaries">0 tok (0%)</span></div>
+              <div class="dim-bar-track"><div class="dim-bar-fill dim-summaries" id="dim-bar-summaries" style="width:0%"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 附件审计表 -->
+        <div class="panel-card">
+          <div class="card-head">
+            <span class="card-title">附件审计表（历史归档与待发送附件）</span>
+            <span id="ctx-media-count" class="card-sub tabular-nums">0 项</span>
+          </div>
+          <div class="audit-table-wrap">
+            <table class="audit-table">
+              <thead>
+                <tr>
+                  <th>附件名称</th>
+                  <th>像素尺寸</th>
+                  <th>字节大小</th>
+                  <th>估算 Token</th>
+                  <th>来源</th>
+                </tr>
+              </thead>
+              <tbody id="ctx-media-tbody">
+                <tr><td colspan="5" class="empty-cell">当前会话暂无附件记录</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 模型上下文窗口解锁控制区 -->
+        <div class="panel-card unlock-card">
+          <div class="card-head">
+            <div class="unlock-head-left">
+              <span class="card-title">模型上下文窗口解锁控制</span>
+              <span id="unlock-mode-badge" class="chip-muted">检测中…</span>
+            </div>
+            <button id="btn-unlock-refresh" class="mini-btn" type="button">重新检测</button>
+          </div>
+
+          <div id="unlock-binary-info" class="unlock-info-box">正在查询本机 agy 二进制 256K 门禁状态…</div>
+
+          <div class="unlock-preset-grid" id="unlock-preset-grid">
+            <button class="unlock-preset-btn" type="button" data-unlock-mode="default" data-unlock-limit="256000">
+              <strong>256K 默认</strong>
+              <span>原厂 256,000 上限</span>
+            </button>
+            <button class="unlock-preset-btn" type="button" data-unlock-mode="fixed" data-unlock-limit="512000">
+              <strong>固定 512K</strong>
+              <span>512,000 tokens</span>
+            </button>
+            <button class="unlock-preset-btn" type="button" data-unlock-mode="fixed" data-unlock-limit="900000">
+              <strong>900K</strong>
+              <span>900,000 tokens</span>
+            </button>
+            <button class="unlock-preset-btn" type="button" data-unlock-mode="fixed" data-unlock-limit="983040">
+              <strong>983,040</strong>
+              <span>960 KiB 标准高限</span>
+            </button>
+            <button class="unlock-preset-btn" type="button" data-unlock-mode="fixed" data-unlock-limit="1000000">
+              <strong>1M</strong>
+              <span>1,000,000 tokens</span>
+            </button>
+            <button class="unlock-preset-btn" type="button" data-unlock-mode="dynamic" data-unlock-limit="">
+              <strong>动态跟随</strong>
+              <span>解除 256K 钳位限制</span>
+            </button>
+          </div>
+
+          <div class="unlock-custom-bar">
+            <input id="unlock-custom-limit" class="text-input" type="number" min="16384" max="2097152" step="1000" placeholder="自定义整数上限 (16,384 ~ 2,097,152)" />
+            <button id="btn-unlock-apply-custom" class="btn-secondary" type="button">应用自定义</button>
+            <button id="btn-unlock-restore" class="btn-danger-outline" type="button">还原原版备份</button>
+          </div>
+
+          <div id="unlock-feedback" class="unlock-feedback" hidden></div>
+        </div>
+      </div>
+
+      <!-- Tab 2：模型设置（单模型上下文窗口上限配置） -->
+      <div id="ctx-pane-models" class="panel-tab-pane" role="tabpanel" hidden>
+        <div class="panel-card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">单模型上下文窗口上限设置</div>
+              <div id="ctx-models-summary" class="card-sub">为每个可用模型独立配置上下文窗口预算（支持保存至服务端）</div>
+            </div>
+            <div class="panel-actions">
+              <button id="btn-refresh-model-ctx" class="mini-btn" type="button">重新读取</button>
+              <button id="btn-save-all-model-ctx" class="mini-btn mini-btn-accent" type="button">保存全部</button>
+            </div>
+          </div>
+
+          <div id="model-ctx-list" class="model-ctx-list">
+            <div class="empty-placeholder">正在加载模型上下文配置…</div>
+          </div>
+          <div id="model-ctx-feedback" class="unlock-feedback" hidden></div>
+        </div>
+      </div>
+
+      <!-- Tab 3：速度对比（时间/来源筛选 + 中位数横向柱状对比 + 单模型 SVG 趋势图） -->
+      <div id="ctx-pane-speed" class="panel-tab-pane" role="tabpanel" hidden>
+        <!-- 第一行筛选栏：时间范围 + 来源 -->
+        <div id="speed-filter-bar" class="speed-filter-bar">
+          <div class="segmented-group segmented-sm" id="speed-range-tabs" role="tablist" aria-label="时间范围筛选">
+            <button class="seg-btn is-active" type="button" data-speed-range="7">近 7 天</button>
+            <button class="seg-btn" type="button" data-speed-range="30">近 30 天</button>
+            <button class="seg-btn" type="button" data-speed-range="all">全部</button>
+          </div>
+          <div class="segmented-group segmented-sm" id="speed-source-tabs" role="tablist" aria-label="来源筛选">
+            <button class="seg-btn is-active" type="button" data-speed-source="all">全部来源</button>
+            <button class="seg-btn" type="button" data-speed-source="chat">日常对话</button>
+          </div>
+        </div>
+
+        <!-- 上半区卡片：输出速度对比 -->
+        <div class="panel-card">
+          <div class="card-head">
+            <span class="card-title">输出速度对比</span>
+            <div class="segmented-group segmented-sm" id="ctx-speed-metric-tabs">
+              <button class="seg-btn is-active" type="button" data-ctx-speed-metric="tps">输出速度</button>
+              <button class="seg-btn" type="button" data-ctx-speed-metric="ttft">首字延迟</button>
+              <button class="seg-btn" type="button" data-ctx-speed-metric="duration">总耗时</button>
+            </div>
+          </div>
+          <div id="ctx-speed-bars" class="model-speed-bars">
+            <div class="empty-placeholder">正在统计模型测速样本…</div>
+          </div>
+          <div id="ctx-speed-footnote" class="speed-footnote">
+            以各模型与档位的中位数统计；不足 3 条标注“样本少”。总耗时受输出长度影响，条件相近时才可比较。
+          </div>
+        </div>
+
+        <!-- 下半区卡片：单模型速度趋势（纯 SVG） -->
+        <div class="panel-card">
+          <div class="card-head">
+            <span class="card-title">单模型速度趋势</span>
+            <select id="speed-trend-model-select" class="ctrl-select-box" aria-label="选择模型与档位查看趋势"></select>
+          </div>
+          <div id="speed-trend-chart-wrap" class="svg-chart-wrap">
+            <svg id="speed-trend-svg" class="trend-svg" viewBox="0 0 560 190" preserveAspectRatio="none" aria-label="单模型速度趋势图"></svg>
+            <div id="speed-trend-empty" class="empty-placeholder" hidden>当前筛选条件下暂无趋势样本</div>
+          </div>
+          <div id="speed-trend-time-axis" class="svg-time-axis tabular-nums">
+            <span id="speed-trend-start-time">—</span>
+            <span id="speed-trend-end-time">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 4：配置（Antigravity 账号切换 + CLI 网络代理设置） -->
+      <div id="ctx-pane-config" class="panel-tab-pane" role="tabpanel" hidden>
+        <!-- Antigravity 账号切换 -->
+        <div id="config-accounts-card" class="panel-card">
+          <div class="card-head">
+            <div class="unlock-head-left">
+              <span class="card-title">Antigravity 账号切换</span>
+              <span id="account-token-status" class="chip-muted">检测中…</span>
+            </div>
+            <button id="btn-refresh-accounts" class="mini-btn" type="button">刷新账号</button>
+          </div>
+
+          <div class="account-active-bar">
+            <span class="metric-k">当前生效账号</span>
+            <strong id="account-active-email" class="account-email-text">—</strong>
+          </div>
+
+          <div id="accounts-list" class="accounts-list">
+            <div class="empty-placeholder">正在扫描本地账号文件…</div>
+          </div>
+          <div id="account-switch-feedback" class="unlock-feedback" hidden></div>
+        </div>
+
+        <!-- CLI 网络代理设置 -->
+        <div id="config-proxy-card" class="panel-card">
+          <div class="card-head">
+            <div class="unlock-head-left">
+              <span class="card-title">CLI 网络代理设置</span>
+              <span id="proxy-status-badge" class="chip-muted">读取中…</span>
+            </div>
+            <label class="toggle-chip toggle-chip-compact">
+              <input id="chk-proxy-enabled" type="checkbox" />
+              <span>启用代理</span>
+            </label>
+          </div>
+
+          <div class="proxy-form-group">
+            <label class="field-label" for="proxy-url-input">代理地址（支持 http / https / socks5）</label>
+            <div class="proxy-input-row">
+              <input id="proxy-url-input" class="text-input" type="password" placeholder="http(s)://user:pass@ip:port 或 socks5://ip:port" spellcheck="false" autocomplete="off" />
+              <button id="btn-toggle-proxy-visibility" class="btn-secondary" type="button" title="显示或隐藏代理地址中的密码">显示</button>
+            </div>
+          </div>
+
+          <div class="proxy-options-row">
+            <label class="toggle-chip">
+              <input id="chk-proxy-sync-py" type="checkbox" checked />
+              <span>保存时同步更新 switch-agy.py</span>
+            </label>
+          </div>
+
+          <div class="proxy-actions-row">
+            <button id="btn-test-proxy" class="btn-secondary" type="button">测试连通</button>
+            <button id="btn-save-proxy" class="btn-primary" type="button">保存并同步</button>
+          </div>
+
+          <div id="proxy-test-result" class="unlock-feedback" hidden></div>
+          <div id="proxy-save-feedback" class="unlock-feedback" hidden></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 悬浮面板 2：Token 历史热力图与 API 等值账单（3 Tab 视图） -->
+  <section id="panel-history" class="popover-panel popover-history" hidden role="dialog" aria-label="Token 历史热力图与 API 等值账单面板">
+    <div class="panel-header">
+      <div class="panel-title-group">
+        <span class="panel-title">Token 历史热力图与 API 等值账单</span>
+        <span id="hist-earliest-badge" class="chip-muted">扫描中…</span>
+      </div>
+      <div class="panel-actions">
+        <div class="segmented-group" id="hist-source-tabs" role="tablist" aria-label="统计来源筛选">
+          <button class="seg-btn is-active" type="button" data-history-source="all" role="tab" aria-selected="true">全部</button>
+          <button class="seg-btn" type="button" data-history-source="cli" role="tab" aria-selected="false">CLI</button>
+          <button class="seg-btn" type="button" data-history-source="desktop" role="tab" aria-selected="false">桌面端</button>
+        </div>
+        <button id="btn-close-history-panel" class="icon-btn-sm" type="button" aria-label="关闭面板">×</button>
+      </div>
+    </div>
+
+    <!-- 3 个视图 Tab 导航栏 -->
+    <div id="hist-view-tabs" class="panel-tabs" role="tablist" aria-label="历史统计视图切换">
+      <button id="hist-tab-heatmap" class="panel-tab-btn is-active" type="button" data-hist-tab="heatmap" role="tab" aria-selected="true">热力与日趋势</button>
+      <button id="hist-tab-trends" class="panel-tab-btn" type="button" data-hist-tab="trends" role="tab" aria-selected="false">周/月与累计趋势</button>
+      <button id="hist-tab-billing" class="panel-tab-btn" type="button" data-hist-tab="billing" role="tab" aria-selected="false">API 账单与订阅对比</button>
+    </div>
+
+    <div class="panel-body">
+      <!-- Tab 1：热力与日趋势 -->
+      <div id="hist-pane-heatmap" class="panel-tab-pane" role="tabpanel">
+        <!-- 顶部 4 张汇总卡片 -->
+        <div class="hist-summary-cards">
+          <div class="summary-card">
+            <div class="summary-label">今日 Token</div>
+            <div id="sum-today-val" class="summary-value tabular-nums">--</div>
+            <div id="sum-today-sub" class="summary-sub tabular-nums">Input / Cache / Output</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">本月 Token</div>
+            <div id="sum-month-val" class="summary-value tabular-nums">--</div>
+            <div id="sum-month-sub" class="summary-sub tabular-nums">--</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">本年 Token</div>
+            <div id="sum-year-val" class="summary-value tabular-nums">--</div>
+            <div id="sum-year-sub" class="summary-sub tabular-nums">--</div>
+          </div>
+          <div class="summary-card summary-card-accent">
+            <div class="summary-label">累计总 Token</div>
+            <div id="sum-grand-val" class="summary-value tabular-nums">--</div>
+            <div id="sum-grand-sub" class="summary-sub tabular-nums">0 步骤 · 0 会话</div>
+          </div>
+        </div>
+
+        <!-- 52 周交互式日历热力图 -->
+        <div class="panel-card">
+          <div class="card-head">
+            <span class="card-title">52 周 Token 活跃热力图</span>
+            <div class="heat-legend">
+              <span>少</span>
+              <i class="heat-cell lvl-0"></i>
+              <i class="heat-cell lvl-1"></i>
+              <i class="heat-cell lvl-2"></i>
+              <i class="heat-cell lvl-3"></i>
+              <i class="heat-cell lvl-4"></i>
+              <span>多</span>
+            </div>
+          </div>
+          <div class="heatmap-scroll">
+            <div id="heatmap-months" class="heatmap-months"></div>
+            <div class="heatmap-body">
+              <div class="heatmap-weekdays">
+                <span>一</span><span></span><span>三</span><span></span><span>五</span><span></span><span>日</span>
+              </div>
+              <div id="heatmap-grid" class="heatmap-grid" aria-label="52 周热力图网格"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 近 7 天柱状图 + 模型速度对比 -->
+        <div class="hist-two-col">
+          <div class="panel-card">
+            <div class="card-head">
+              <span class="card-title">近 7 天每日用量趋势</span>
+              <span id="last7-total-badge" class="card-sub tabular-nums">--</span>
+            </div>
+            <div id="last7-chart" class="last7-chart"></div>
+          </div>
+
+          <div class="panel-card">
+            <div class="card-head">
+              <span class="card-title">模型速度对比（中位数 TPS / TTFT）</span>
+              <div class="segmented-group segmented-sm" id="speed-metric-tabs">
+                <button class="seg-btn is-active" type="button" data-speed-mode="tps">TPS</button>
+                <button class="seg-btn" type="button" data-speed-mode="ttft">TTFT</button>
+              </div>
+            </div>
+            <div id="model-speed-bars" class="model-speed-bars"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2：周/月与累计趋势 -->
+      <div id="hist-pane-trends" class="panel-tab-pane" role="tabpanel" hidden>
+        <div class="panel-card">
+          <div class="card-head">
+            <span class="card-title">近 12 周每周用量趋势</span>
+            <span id="weekly-total-badge" class="card-sub tabular-nums">--</span>
+          </div>
+          <div id="weekly-bar-chart" class="weekly-bar-chart">
+            <div class="empty-placeholder">暂无每周用量数据</div>
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <div class="card-head">
+            <span class="card-title">月度汇总对比</span>
+            <span id="monthly-summary-count" class="card-sub tabular-nums">0 个月</span>
+          </div>
+          <div id="monthly-summary-grid" class="monthly-summary-grid">
+            <div class="empty-placeholder">暂无月度汇总数据</div>
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <div class="card-head">
+            <span class="card-title">累计用量 / 费用增长曲线</span>
+            <div class="segmented-group segmented-sm" id="cumulative-metric-tabs">
+              <button class="seg-btn is-active" type="button" data-cum-metric="tokens">累计 Token</button>
+              <button class="seg-btn" type="button" data-cum-metric="cost">累计费用</button>
+            </div>
+          </div>
+          <div id="cumulative-chart-wrap" class="svg-chart-wrap">
+            <svg id="cumulative-svg" class="trend-svg" viewBox="0 0 760 200" preserveAspectRatio="none" aria-label="累计用量曲线图"></svg>
+            <div id="cumulative-empty" class="empty-placeholder" hidden>暂无累计趋势数据</div>
+          </div>
+          <div class="svg-time-axis tabular-nums">
+            <span id="cumulative-start-date">—</span>
+            <span id="cumulative-end-date">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3：API 账单与订阅对比 -->
+      <div id="hist-pane-billing" class="panel-tab-pane" role="tabpanel" hidden>
+        <div class="panel-card">
+          <div class="card-head">
+            <span class="card-title">API 等值金额与订阅制性价比对比</span>
+            <span class="chip-muted">非实付 · 按官方公开费率折算</span>
+          </div>
+
+          <div class="cost-hero-grid">
+            <div class="cost-hero-main">
+              <div class="cost-usd tabular-nums" id="cost-total-usd">$0.00</div>
+              <div class="cost-cny tabular-nums" id="cost-total-cny">≈ ¥0.00 CNY (汇率 7.25)</div>
+            </div>
+            <div class="cost-roi-box">
+              <div class="cost-roi-head">
+                <span>对比 $20/月 Pro 订阅</span>
+                <strong id="cost-vs-pro-ratio" class="tabular-nums">--</strong>
+              </div>
+              <div class="progress-track">
+                <div id="cost-pro-progress-fill" class="progress-fill progress-fill-accent" style="width: 0%"></div>
+              </div>
+              <div id="cost-roi-desc" class="card-sub">正在计算等值订阅倍数…</div>
+            </div>
+          </div>
+
+          <!-- 订阅档位对照 & 输入/缓存/输出拆分 -->
+          <div id="billing-sub-compare" class="billing-sub-compare"></div>
+          <div id="billing-category-breakdown" class="billing-category-breakdown"></div>
+
+          <div class="audit-table-wrap">
+            <table class="audit-table">
+              <thead>
+                <tr>
+                  <th>模型</th>
+                  <th>输入 / 缓存 / 输出</th>
+                  <th>调用步数</th>
+                  <th>等值 USD</th>
+                  <th>折算 CNY</th>
+                </tr>
+              </thead>
+              <tbody id="cost-model-tbody">
+                <tr><td colspan="5" class="empty-cell">暂无已计价模型调用记录</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="cost-unpriced-note" class="cost-unpriced-note" hidden></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 热力图 / 柱状图悬浮 Tooltip -->
+  <div id="floating-tooltip" class="floating-tooltip" hidden role="tooltip"></div>
+
+  <!-- 主三栏工作区 -->
+  <div id="app-shell" class="app-shell">
+    <!-- 左侧边栏：工作区切换 + 新建会话 + 按项目分组历史会话 -->
+    <aside id="sidebar" class="sidebar" aria-label="会话与工作区侧边栏">
+      <div class="sidebar-section">
+        <label class="field-label" for="workspace-input">工作区目录</label>
+        <div class="workspace-input-row">
+          <input id="workspace-input" class="text-input" type="text" placeholder="/path/to/workspace" spellcheck="false" />
+          <button id="btn-browse-workspace" class="icon-btn-sm" type="button" title="浏览选择目录" aria-label="浏览选择工作区目录">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1.5 3.5h4.2l1.3 1.5h7.5v8h-13z" />
+            </svg>
+          </button>
+          <button id="btn-switch-workspace" class="btn-secondary" type="button">切换</button>
+        </div>
+      </div>
+
+      <div class="sidebar-actions">
+        <button id="btn-new-chat" class="btn-primary btn-full" type="button">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M8 3v10M3 8h10" />
+          </svg>
+          <span>新建会话</span>
+        </button>
+      </div>
+
+      <div class="sidebar-filter-row">
+        <input id="conv-search-input" class="text-input text-input-sm" type="search" placeholder="搜索历史会话、项目或模型…" />
+        <button id="btn-refresh-convs" class="icon-btn-sm" type="button" title="刷新会话列表" aria-label="刷新会话列表">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M13.5 8A5.5 5.5 0 1 1 8 2.5M13.5 2.5v4h-4" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Projects 区块标题栏 -->
+      <div id="projects-section-header" class="projects-section-header">
+        <span class="projects-section-title">Projects</span>
+        <div class="projects-section-actions">
+          <button id="btn-refresh-projects" class="icon-btn-xs" type="button" title="刷新项目与会话" aria-label="刷新项目">
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M13.5 8A5.5 5.5 0 1 1 8 2.5M13.5 2.5v4h-4" />
+            </svg>
+          </button>
+          <button id="btn-add-project" class="icon-btn-xs" type="button" title="添加项目或切换工作区目录" aria-label="添加项目目录">
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <path d="M8 3v10M3 8h10" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="conversation-list" class="conversation-list" role="list">
+        <div class="empty-placeholder">正在加载项目与历史会话…</div>
+      </div>
+    </aside>
+
+    <!-- 中央对话画布 -->
+    <main id="chat-canvas" class="chat-canvas">
+      <!-- 对话子顶栏 -->
+      <div class="chat-topbar">
+        <div class="chat-topbar-left">
+          <button id="active-project-breadcrumb" class="chat-project-crumb" type="button" title="点击切换项目目录">默认工作区</button>
+          <span class="crumb-sep" aria-hidden="true">/</span>
+          <h1 id="active-conv-title" class="chat-title">新建远程会话</h1>
+          <div id="bound-conv-badge" class="bound-conv-badge" hidden>
+            <span>--conversation</span>
+            <code id="bound-conv-id"></code>
+            <button id="btn-unbind-conv" class="badge-clear-btn" type="button" title="解除绑定，转为全新会话">×</button>
+          </div>
+        </div>
+        <div class="chat-topbar-right">
+          <button id="btn-mobile-right-drawer" class="mini-btn mobile-aux-btn" type="button">Git / 命令</button>
+          <span id="chat-live-indicator" class="live-badge" hidden>
+            <span class="pulse-dot"></span>生成中
+          </span>
+        </div>
+      </div>
+
+      <!-- 消息流滚动区 -->
+      <div id="message-list" class="message-list" aria-live="polite">
+        <div id="welcome-view" class="welcome-view">
+          <div class="welcome-card">
+            <div class="welcome-badge">Antigravity 2.0 Remote Control</div>
+            <h2>随时随地安全远程操控本机 agy CLI</h2>
+            <p>支持直接粘贴截图（Ctrl+V）、实时查看思考过程与工具调用、追踪 5 维上下文占用与 52 周 Token 热力账单，100% 复用本机账号配额。</p>
+            <div class="quick-prompts">
+              <button class="quick-prompt-btn" type="button" data-prompt="检查当前工作区 git status 和最近修改，总结关键改动。">检查当前工作区 Git 状态</button>
+              <button class="quick-prompt-btn" type="button" data-prompt="列出当前目录结构，说明主要模块职责与入口文件。">分析工作区项目结构</button>
+              <button class="quick-prompt-btn" type="button" data-prompt="帮我排查一段报错日志（我将随后粘贴），并给出修复方案。">协助排查代码报错</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 滚动回底部悬浮按钮 -->
+      <button id="btn-scroll-bottom" class="scroll-bottom-btn" type="button" hidden title="回到底部">↓ 最新消息</button>
+
+      <!-- 底部多功能输入台 -->
+      <footer id="composer" class="composer">
+        <div id="drop-overlay" class="drop-overlay" hidden>松开鼠标上传图片到当前工作区</div>
+
+        <!-- 图片预览卡片区 -->
+        <div id="attachment-previews" class="attachment-previews" hidden></div>
+
+        <div class="composer-box">
+          <textarea id="prompt-input" class="prompt-input" rows="2" placeholder="输入指令或问题… Enter 发送，Shift+Enter 换行，支持 Ctrl+V 粘贴或拖拽图片"></textarea>
+
+          <div class="composer-toolbar">
+            <div class="composer-controls-left">
+              <!-- 上传图片按钮 -->
+              <input id="file-upload-input" type="file" accept="image/*" multiple hidden />
+              <button id="btn-attach-image" class="tool-btn" type="button" title="上传或粘贴图片 (支持 PNG/JPEG/GIF/BMP)">
+                <svg viewBox="0 0 18 18" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M15.2 8.4l-6.6 6.6a3.6 3.6 0 0 1-5.1-5.1l7-7a2.4 2.4 0 0 1 3.4 3.4l-6.7 6.7a1.2 1.2 0 0 1-1.7-1.7l6-6" />
+                </svg>
+                <span>传图</span>
+              </button>
+
+              <!-- --model 选择 -->
+              <label class="ctrl-select-wrap" title="选择推理模型 (--model)">
+                <span class="ctrl-label">模型</span>
+                <select id="select-model" class="ctrl-select"></select>
+              </label>
+
+              <!-- --effort 选择 -->
+              <label class="ctrl-select-wrap" title="推理思考强度 (--effort)">
+                <span class="ctrl-label">强度</span>
+                <select id="select-effort" class="ctrl-select">
+                  <option value="" selected>默认</option>
+                  <option value="low">low</option>
+                  <option value="medium">medium</option>
+                  <option value="high">high</option>
+                  <option value="xhigh">xhigh</option>
+                  <option value="max">max</option>
+                </select>
+              </label>
+
+              <!-- --mode 选择 -->
+              <label class="ctrl-select-wrap" title="执行权限模式 (--mode)">
+                <span class="ctrl-label">模式</span>
+                <select id="select-mode" class="ctrl-select">
+                  <option value="auto" selected>auto</option>
+                  <option value="accept-edits">accept-edits</option>
+                  <option value="plan">plan</option>
+                </select>
+              </label>
+
+              <!-- --dangerously-skip-permissions 开关 -->
+              <label class="toggle-chip" title="跳过所有危险操作确认 (--dangerously-skip-permissions)">
+                <input id="chk-skip-permissions" type="checkbox" />
+                <span>免确认执行</span>
+              </label>
+            </div>
+
+            <div class="composer-controls-right">
+              <span class="shortcut-hint">Enter 发送 · Shift+Enter 换行</span>
+              <button id="btn-stop-stream" class="btn-danger" type="button" hidden>
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1.5" /></svg>
+                <span>停止</span>
+              </button>
+              <button id="btn-send-prompt" class="btn-primary" type="button">
+                <span>发送</span>
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2.5 8h11M9.5 4l4 4-4 4" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </main>
+
+    <!-- 右侧辅助面板（可折叠） -->
+    <aside id="aux-pane" class="aux-pane" aria-label="右侧辅助信息面板">
+      <div class="aux-tabs" role="tablist">
+        <button class="aux-tab-btn is-active" type="button" data-aux-tab="git" role="tab" aria-selected="true">Git Diff &amp; 状态</button>
+        <button class="aux-tab-btn" type="button" data-aux-tab="files" role="tab" aria-selected="false">工作区文件</button>
+        <button class="aux-tab-btn" type="button" data-aux-tab="cli" role="tab" aria-selected="false">等效 CLI</button>
+      </div>
+
+      <!-- Tab 1: Git Diff & 状态 -->
+      <div id="aux-panel-git" class="aux-tab-panel" role="tabpanel">
+        <div class="aux-section-head">
+          <div class="git-branch-pill">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <circle cx="4.5" cy="3.5" r="1.5" /><circle cx="4.5" cy="12.5" r="1.5" /><circle cx="11.5" cy="6" r="1.5" />
+              <path d="M4.5 5v6M11.5 7.5c0 2.5-7 1.5-7 4" />
+            </svg>
+            <span id="git-branch-name">未探测</span>
+          </div>
+          <button id="btn-refresh-workspace" class="mini-btn" type="button">刷新</button>
+        </div>
+
+        <div id="git-status-list" class="git-status-list">
+          <div class="empty-placeholder">等待加载工作区 Git 状态…</div>
+        </div>
+
+        <div class="aux-subhead">Diff 预览（最高 64KB）</div>
+        <pre id="git-diff-view" class="git-diff-view"><code>暂无未提交差异</code></pre>
+      </div>
+
+      <!-- Tab 2: 工作区文件 -->
+      <div id="aux-panel-files" class="aux-tab-panel" role="tabpanel" hidden>
+        <div class="aux-section-head">
+          <span class="card-sub">点击文件可插入 @引用 到输入框</span>
+          <button id="btn-refresh-files" class="mini-btn" type="button">刷新</button>
+        </div>
+        <div id="workspace-files-list" class="workspace-files-list">
+          <div class="empty-placeholder">等待读取工作区文件…</div>
+        </div>
+      </div>
+
+      <!-- Tab 3: 等效 CLI 命令预览 -->
+      <div id="aux-panel-cli" class="aux-tab-panel" role="tabpanel" hidden>
+        <div class="aux-section-head">
+          <span class="card-sub">实时等效命令行参考</span>
+          <button id="btn-copy-cli-cmd" class="mini-btn" type="button">复制命令</button>
+        </div>
+        <pre id="cli-command-preview" class="cli-command-preview"><code>agy -p "" --output-format stream-json</code></pre>
+        <div class="cli-preview-tips">
+          <p>说明：</p>
+          <ul>
+            <li>远程界面点击发送后，服务端直接在宿主机以子进程方式调用上述等效命令。</li>
+            <li>若已绑定历史会话，自动附加 <code>--conversation &lt;id&gt;</code> 保持上下文续聊。</li>
+            <li>粘贴或上传截图后，自动注入附件目录 <code>--add-dir</code> 与文件说明提示词。</li>
+          </ul>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- 图片灯箱预览模态框 -->
+  <div id="lightbox-modal" class="modal-overlay" hidden role="dialog" aria-modal="true" aria-label="图片放大预览">
+    <div class="lightbox-card">
+      <div class="lightbox-header">
+        <span id="lightbox-caption" class="lightbox-caption">图片预览</span>
+        <button id="btn-close-lightbox" class="icon-btn-sm" type="button" aria-label="关闭预览">×</button>
+      </div>
+      <div class="lightbox-body">
+        <img id="lightbox-img" src="" alt="预览图片" />
+      </div>
+    </div>
+  </div>
+
+  <!-- 密码鉴权登录弹窗 -->
+  <div id="auth-modal" class="modal-overlay modal-auth" hidden role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
+    <div class="auth-card">
+      <div class="auth-logo">
+        <svg viewBox="0 0 24 24" width="32" height="32" fill="none">
+          <rect x="2" y="2" width="20" height="20" rx="6" fill="rgba(139,92,246,0.18)" stroke="#8b5cf6" stroke-width="1.6" />
+          <path d="M12 7v5m0 3.5h.01" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" />
+        </svg>
+      </div>
+      <h2 id="auth-modal-title">AGY Remote 访问验证</h2>
+      <p class="auth-desc">当前控制台已启用密码保护，请输入服务端配置的 <code>AGY_AUTH_PASSWORD</code> 解锁控制权限。</p>
+      <form id="auth-form" class="auth-form">
+        <input id="auth-password-input" class="text-input auth-input" type="password" placeholder="输入访问密码" autocomplete="current-password" required />
+        <div id="auth-error-msg" class="auth-error" hidden></div>
+        <button id="btn-auth-submit" class="btn-primary btn-full" type="submit">验证并进入控制台</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 路径选择器弹窗（添加项目 / 切换工作区目录） -->
+  <div id="dir-picker-modal" class="modal-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="dir-picker-title">
+    <div class="dir-picker-card">
+      <div class="dir-picker-header">
+        <span id="dir-picker-title" class="panel-title">选择项目工作区目录</span>
+        <button id="btn-close-dir-picker" class="icon-btn-sm" type="button" aria-label="关闭目录选择器">×</button>
+      </div>
+      <!-- 第一行：可编辑路径输入框 + 蓝色 OK 按钮 -->
+      <div class="dir-picker-path-row">
+        <input id="dir-picker-path-input" class="text-input" type="text" placeholder="/home/user/workspace" spellcheck="false" />
+        <button id="btn-dir-picker-ok" class="btn-blue" type="button">OK</button>
+      </div>
+      <!-- 第二行：返回上级目录 -->
+      <button id="btn-dir-picker-up" class="dir-picker-up-row" type="button">
+        <span class="dir-up-arrow" aria-hidden="true">↑</span>
+        <span>..</span>
+        <span id="dir-picker-parent-hint" class="dir-parent-hint"></span>
+      </button>
+      <div id="dir-picker-error" class="auth-error" hidden></div>
+      <!-- 主体：可滚动子目录列表（含隐藏文件夹） -->
+      <div id="dir-picker-list" class="dir-picker-list" role="listbox" aria-label="子目录列表">
+        <div class="empty-placeholder">正在读取目录列表…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 全局轻提示容器 -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

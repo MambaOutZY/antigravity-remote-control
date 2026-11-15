@@ -1,0 +1,79 @@
+# ==============================================================================
+# agy-remote-control systemd 服务模板
+#
+# 推荐部署方式（用户级 systemd --user）：
+#   1. 直接使用当前登录用户的身份运行，自动继承 ~/.gemini/ 下的 agy 账号凭证与配额；
+#   2. 无需 root 权限即可启动、重启和查看日志；
+#   3. 强烈建议使用 `bash deploy/install-ubuntu.sh` 自动生成适配本机路径的单元文件。
+#
+# 如需手动安装为用户级服务：
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/agy-remote.service ~/.config/systemd/user/agy-remote.service
+#   # 按需修改下方 WorkingDirectory、ExecStart 与 Environment 占位路径（注意用户级服务不要设置 User=）
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now agy-remote.service
+#   # 开启用户级服务离线常驻（防止退出 SSH 后服务被系统停止）
+#   sudo loginctl enable-linger "$USER"
+#
+# 如需安装为系统级服务（/etc/systemd/system/agy-remote.service）：
+#   1. 取消下方 User= 和 Group= 注释，并改为拥有 ~/.gemini/ 登录态的实际用户名；
+#   2. 将所有 %h 替换为该用户的真实家目录绝对路径（例如 /home/ubuntu）；
+#   3. 将 [Install] 中的 WantedBy=default.target 改为 WantedBy=multi-user.target。
+# ==============================================================================
+
+[Unit]
+Description=AGY Remote Control 私有网页控制台与上下文看板
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# 若改为系统级 /etc/systemd/system/agy-remote.service，请取消以下两行注释并填写真实用户名：
+# User=YOUR_USERNAME
+# Group=YOUR_USERNAME
+
+# 项目根目录（请替换为实际存放 agy-remote-control 的绝对路径）
+WorkingDirectory=%h/agy-remote-control
+
+# Node.js 可执行文件与入口脚本（请确认 node >= 20 的实际路径，可用 `which node` 查看）
+ExecStart=/usr/bin/node %h/agy-remote-control/server.js
+
+# 环境变量配置（建议正式环境使用 EnvironmentFile 存放密码，避免泄露）
+# EnvironmentFile=%h/.config/agy-remote/env
+
+# 监听地址与端口（默认值：HOST=0.0.0.0, PORT=8787）
+Environment="HOST=0.0.0.0"
+Environment="PORT=8787"
+
+# 【重要安全配置】Web 登录鉴权密码，公网穿透部署前务必修改为高强度随机密码
+Environment="AGY_AUTH_PASSWORD=CHANGE_ME_TO_STRONG_PASSWORD"
+
+# 默认工作区目录（打开网页后默认展示和执行任务的代码仓库目录）
+Environment="DEFAULT_WORKSPACE=%h"
+
+# 可选：显式指定 agy / agy-real 二进制路径（未设置时自动按标准路径与 PATH 探测）
+# Environment="AGY_BIN=%h/.gemini/antigravity/bin/agy"
+
+# 可选：自定义桌面端与 CLI 会话日志目录（默认读取 ~/.gemini/antigravity 与 ~/.gemini/antigravity-cli）
+# Environment="AG_DIR=%h/.gemini/antigravity"
+# Environment="AG_CLI_DIR=%h/.gemini/antigravity-cli"
+
+# PATH 必须包含 ~/.gemini/antigravity/bin 与 ~/.local/bin，确保能够找到 agy 及相关工具链
+# 若 Node.js 通过 nvm/fnm 安装，请将对应 bin 目录也追加到 PATH 最前面
+Environment="PATH=%h/.gemini/antigravity/bin:%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="NODE_ENV=production"
+
+# 异常退出自动拉起
+Restart=always
+RestartSec=3
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# 标准输出与错误统一交由 systemd journald 管理（可用 journalctl --user -u agy-remote -f 查看）
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+# 用户级服务使用 default.target；若部署为系统级服务请改为 multi-user.target
+WantedBy=default.target
