@@ -1252,4 +1252,34 @@ describe('扩展能力：项目分组、目录浏览、账号切换与代理桥�
     assert.ok(htmlText.includes('id="composer-suggest-popover"'));
     assert.ok(htmlText.includes('id="suggest-list"'));
   });
+
+  it('15. GET /api/meter/usage-limits 与 bootstrap.usageLimits 验证官方模型额度、5h/周限额及前端快捷模型切换器 DOM', async () => {
+    // 1. GET /api/meter/usage-limits
+    const limitRes = await fetch(`${baseUrl}/api/meter/usage-limits`);
+    assert.equal(limitRes.status, 200);
+    const limitJson = await limitRes.json();
+    assert.equal(limitJson.ok, true);
+    assert.ok(limitJson.gemini, '应包含 gemini 额度分组');
+    assert.ok(limitJson.claudeAndGpt, '应包含 claudeAndGpt 额度分组');
+    assert.equal(typeof limitJson.gemini.weeklyLimit.percentLeft, 'number');
+    assert.equal(typeof limitJson.gemini.fiveHourLimit.percentLeft, 'number');
+    assert.ok(limitJson.gemini.weeklyLimit.resetTimeText.includes('Resets in'));
+    assert.ok(limitJson.gemini.fiveHourLimit.resetTimeText.includes('Resets in'));
+
+    // 2. GET /api/bootstrap 携带 usageLimits
+    const bootRes = await fetch(`${baseUrl}/api/bootstrap`);
+    const bootJson = await bootRes.json();
+    assert.ok(bootJson.usageLimits, 'bootstrap 应包含 usageLimits 字段');
+    assert.ok(bootJson.usageLimits.gemini);
+
+    // 3. 验证前端 HTML 包含官方 1:1 模型选择胶囊与 View Usage 浮层
+    const html = await (await fetch(`${baseUrl}/`)).text();
+    assert.ok(html.includes('id="btn-model-picker"'), '应当包含模型选择胶囊按钮');
+    assert.ok(html.includes('id="model-picker-name"'), '应当包含模型显示名');
+    assert.ok(html.includes('id="model-picker-quota"'), '应当包含胶囊额度指示徽章');
+    assert.ok(html.includes('id="model-switcher-popover"'), '应当包含模型切换浮层');
+    assert.ok(html.includes('id="btn-toggle-usage-view"'), '应当包含 View Usage 入口项');
+    assert.ok(html.includes('id="model-popover-usage"'), '应当包含 Usage 额度展示面板');
+    assert.ok(html.includes('id="btn-mode-picker"'), '应当包含权限模式胶囊');
+  });
 });

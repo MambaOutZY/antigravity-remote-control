@@ -2277,6 +2277,11 @@
       if (data.tokenSummary) {
         renderHistoryDashboard({ summary: data.tokenSummary, costSummary: data.tokenSummary.costSummary });
       }
+      if (data.usageLimits) {
+        renderUsageLimits(data.usageLimits);
+      } else {
+        refreshUsageLimits();
+      }
       // 异步拉取完整历史账单、模型上下文覆写与工作区 Git 状态
       loadTokenHistory(state.historySource);
       loadWorkspaceOverview();
@@ -2293,20 +2298,324 @@
     }
   }
 
+  /**
+   * 格式化官方模型显示名称、徽章与可用状态
+   */
+  function formatOfficialModel(rawId) {
+    const id = String(rawId || '').toLowerCase().trim();
+    if (id.includes('gemini-3.8-flash-high') || id === 'gemini-3.8-flash-high') {
+      return { id: 'gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash High', badge: '', group: 'gemini', status: 'available' };
+    }
+    if (id.includes('gemini-3.8-flash-medium') || id === 'gemini-3.8-flash-medium') {
+      return { id: 'gemini-3.8-flash-medium', displayName: 'Gemini 3.8 Flash Medium', badge: '', group: 'gemini', status: 'available' };
+    }
+    if (id.includes('gemini-3.8-flash-low') || id === 'gemini-3.8-flash-low') {
+      return { id: 'gemini-3.8-flash-low', displayName: 'Gemini 3.8 Flash Low', badge: '', group: 'gemini', status: 'available' };
+    }
+    if (id.includes('claude-sonnet-4-6') || id.includes('claude-sonnet')) {
+      return { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', badge: 'Notice', group: 'claude', status: 'available' };
+    }
+    if (id.includes('claude-opus-4-6') || id.includes('claude-opus')) {
+      return { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', badge: 'Notice', group: 'claude', status: 'available' };
+    }
+    if (id.includes('gpt-oss-120b') || id.includes('gpt-oss')) {
+      return { id: 'gpt-oss-120b-medium', displayName: 'GPT-OSS 120B (Medium)', badge: 'Notice', group: 'claude', status: 'available' };
+    }
+    if (id.includes('gemini-4-carbon')) {
+      return { id: 'gemini-4-carbon', displayName: 'Gemini 4 Carbon', badge: 'Unavailable', group: 'gemini', status: 'unavailable' };
+    }
+    if (id.includes('gemini-4-argon')) {
+      return { id: 'gemini-4-argon', displayName: 'Gemini 4 Argon', badge: 'Unavailable', group: 'gemini', status: 'unavailable' };
+    }
+    if (id.includes('gemini-4-hydrogen')) {
+      return { id: 'gemini-4-hydrogen', displayName: 'Gemini 4 Hydrogen', badge: 'Unavailable', group: 'gemini', status: 'unavailable' };
+    }
+    // 兜底通用美化命名
+    const pretty = rawId.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    return { id: rawId, displayName: pretty, badge: '', group: id.includes('claude') || id.includes('gpt') ? 'claude' : 'gemini', status: 'available' };
+  }
+
+  /** 全局额度数据状态缓存 */
+  let usageLimitsData = null;
+
+  /**
+   * 渲染并计算官方 1:1 额度圆环与文本
+   */
+  function renderUsageLimits(data) {
+    if (!data) return;
+    usageLimitsData = data;
+
+    const gWeeklyPct = Math.max(0, Math.min(100, Number(data.gemini?.weeklyLimit?.percentLeft ?? 88)));
+    const g5hPct = Math.max(0, Math.min(100, Number(data.gemini?.fiveHourLimit?.percentLeft ?? 72)));
+    const cWeeklyPct = Math.max(0, Math.min(100, Number(data.claudeAndGpt?.weeklyLimit?.percentLeft ?? 100)));
+    const c5hPct = Math.max(0, Math.min(100, Number(data.claudeAndGpt?.fiveHourLimit?.percentLeft ?? 100)));
+
+    // 周限额圆环 (r=9, 周长=56.55)
+    const setRing = (circleId, pct) => {
+      const el = $(circleId);
+      if (!el) return;
+      const circumference = 56.55;
+      const offset = circumference * (1 - pct / 100);
+      el.style.strokeDashoffset = String(offset.toFixed(2));
+      el.classList.toggle('is-warn', pct <= 30 && pct > 10);
+      el.classList.toggle('is-danger', pct <= 10);
+    };
+
+    setRing('usage-gemini-weekly-circle', gWeeklyPct);
+    setRing('usage-gemini-5h-circle', g5hPct);
+    setRing('usage-claude-weekly-circle', cWeeklyPct);
+    setRing('usage-claude-5h-circle', c5hPct);
+
+    if ($('usage-gemini-weekly-text')) $('usage-gemini-weekly-text').textContent = `${gWeeklyPct}% left`;
+    if ($('usage-gemini-5h-text')) $('usage-gemini-5h-text').textContent = `${g5hPct}% left`;
+    if ($('usage-claude-weekly-text')) $('usage-claude-weekly-text').textContent = `${cWeeklyPct}% left`;
+    if ($('usage-claude-5h-text')) $('usage-claude-5h-text').textContent = `${c5hPct}% left`;
+
+    if ($('usage-gemini-weekly-reset')) $('usage-gemini-weekly-reset').textContent = data.gemini?.weeklyLimit?.resetTimeText || 'Resets in 5d 15h';
+    if ($('usage-gemini-5h-reset')) $('usage-gemini-5h-reset').textContent = data.gemini?.fiveHourLimit?.resetTimeText || 'Resets in 39m';
+    if ($('usage-claude-weekly-reset')) $('usage-claude-weekly-reset').textContent = data.claudeAndGpt?.weeklyLimit?.resetTimeText || 'Resets in 6d 2h';
+    if ($('usage-claude-5h-reset')) $('usage-claude-5h-reset').textContent = data.claudeAndGpt?.fiveHourLimit?.resetTimeText || 'Resets in 4h 50m';
+
+    // 同步更新输入框胶囊上的当前模型额度百分比微型圆环 (r=6, 周长=37.7)
+    updateModelPickerQuotaPill();
+  }
+
+  /**
+   * 刷新并拉取最新额度数据
+   */
+  async function refreshUsageLimits() {
+    try {
+      const data = await apiFetch('/api/meter/usage-limits');
+      renderUsageLimits(data);
+      showToast('已同步最新模型配额与使用限制');
+    } catch {
+      // 容错使用当前缓存
+    }
+  }
+
+  /**
+   * 根据当前选中的模型分组更新输入框胶囊上的额度指示环
+   */
+  function updateModelPickerQuotaPill() {
+    const activeModelId = $('select-model')?.value || 'gemini-3.8-flash-high';
+    const info = formatOfficialModel(activeModelId);
+    const isClaude = info.group === 'claude';
+
+    let activePct = 100;
+    if (usageLimitsData) {
+      activePct = isClaude
+        ? Number(usageLimitsData.claudeAndGpt?.fiveHourLimit?.percentLeft ?? 100)
+        : Number(usageLimitsData.gemini?.fiveHourLimit?.percentLeft ?? 72);
+    } else {
+      activePct = isClaude ? 100 : 72;
+    }
+
+    const textEl = $('model-picker-quota-text');
+    const circleEl = $('model-picker-quota-circle');
+    const badgeEl = $('model-picker-quota');
+
+    if (textEl) textEl.textContent = `${activePct}%`;
+    if (circleEl) {
+      const circumference = 37.7;
+      const offset = circumference * (1 - activePct / 100);
+      circleEl.style.strokeDashoffset = String(offset.toFixed(2));
+    }
+    if (badgeEl) {
+      badgeEl.classList.toggle('is-warn', activePct <= 30 && activePct > 10);
+      badgeEl.classList.toggle('is-danger', activePct <= 10);
+      badgeEl.title = `当前模型组额度剩余 ${activePct}%（5h 限制）`;
+    }
+  }
+
+  /**
+   * 渲染官方 1:1 模型选择弹窗列表
+   */
+  function renderModelSwitcherList() {
+    const listEl = $('model-popover-list');
+    if (!listEl) return;
+
+    const activeModelId = $('select-model')?.value || 'gemini-3.8-flash-high';
+
+    // 官方标准展示模型项全集
+    const OFFICIAL_MENU_ITEMS = [
+      { id: 'gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash High', badge: '', status: 'available' },
+      { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', badge: 'Notice', status: 'available' },
+      { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', badge: 'Notice', status: 'available' },
+      { id: 'gpt-oss-120b-medium', displayName: 'GPT-OSS 120B (Medium)', badge: 'Notice', status: 'available' },
+      { id: 'gemini-4-carbon', displayName: 'Gemini 4 Carbon', badge: 'Unavailable', status: 'unavailable' },
+      { id: 'gemini-4-argon', displayName: 'Gemini 4 Argon', badge: 'Unavailable', status: 'unavailable' },
+      { id: 'gemini-4-hydrogen', displayName: 'Gemini 4 Hydrogen', badge: 'Unavailable', status: 'unavailable' }
+    ];
+
+    // 将后端返回的其它自定义可用模型（如 medium/low）也平滑整合
+    const knownIds = new Set(OFFICIAL_MENU_ITEMS.map((m) => m.id));
+    (state.models || []).forEach((m) => {
+      const mid = typeof m === 'string' ? m : (m.id || m.modelId || m.name);
+      if (!knownIds.has(mid)) {
+        OFFICIAL_MENU_ITEMS.push(formatOfficialModel(mid));
+        knownIds.add(mid);
+      }
+    });
+
+    listEl.innerHTML = OFFICIAL_MENU_ITEMS.map((item) => {
+      const isSelected = item.id === activeModelId;
+      const isUnavailable = item.status === 'unavailable';
+      const badgeHtml = item.badge === 'Notice'
+        ? `<span class="model-badge-notice">Notice ⓘ</span>`
+        : (item.badge === 'Unavailable' ? `<span class="model-badge-unavailable">Unavailable ⓘ</span>` : '');
+
+      const checkHtml = isSelected
+        ? `<svg class="model-item-check" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6"/></svg>`
+        : '';
+
+      return `
+        <button class="model-popover-item${isSelected ? ' is-selected' : ''}${isUnavailable ? ' is-disabled' : ''}" type="button" data-model-id="${escapeHtml(item.id)}" ${isUnavailable ? 'disabled' : ''}>
+          <div class="model-item-title">
+            <span>${escapeHtml(item.displayName)}</span>
+            ${badgeHtml}
+          </div>
+          ${checkHtml}
+        </button>
+      `;
+    }).join('');
+
+    // 点击模型一键快速切换
+    listEl.querySelectorAll('.model-popover-item:not(.is-disabled)').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const mid = btn.dataset.modelId;
+        if (mid) selectModelQuick(mid);
+      });
+    });
+  }
+
+  /**
+   * 一键极速切换当前模型
+   */
+  function selectModelQuick(modelId) {
+    const modelSel = $('select-model');
+    if (modelSel) {
+      // 确保 option 存在
+      if (!Array.from(modelSel.options).some((o) => o.value === modelId)) {
+        const opt = document.createElement('option');
+        opt.value = modelId;
+        opt.textContent = formatOfficialModel(modelId).displayName;
+        modelSel.appendChild(opt);
+      }
+      modelSel.value = modelId;
+      modelSel.dispatchEvent(new Event('change'));
+    }
+
+    localStorage.setItem('agy_model', modelId);
+    const info = formatOfficialModel(modelId);
+
+    // 同步更新输入框胶囊文本
+    const nameEl = $('model-picker-name');
+    if (nameEl) nameEl.textContent = info.displayName;
+
+    // 同步顶栏上下文面板中的模型胶囊
+    const ctxModelEl = $('ctx-panel-model-pill');
+    if (ctxModelEl) ctxModelEl.textContent = info.displayName;
+
+    // 更新微型额度圆环
+    updateModelPickerQuotaPill();
+
+    // 关闭模型浮层并重新渲染列表对勾
+    closeModelSwitcherPopover();
+    renderModelSwitcherList();
+
+    showToast(`已切换推理模型：${info.displayName}`);
+  }
+
+  /**
+   * 打开/关闭官方模型选择与额度浮层
+   */
+  function toggleModelSwitcherPopover() {
+    const pop = $('model-switcher-popover');
+    const trigger = $('btn-model-picker');
+    if (!pop) return;
+
+    const willOpen = pop.hidden;
+    pop.hidden = !willOpen;
+    if (trigger) {
+      trigger.setAttribute('aria-expanded', String(willOpen));
+      trigger.classList.toggle('is-active', willOpen);
+    }
+    if (willOpen) {
+      renderModelSwitcherList();
+      updateModelPickerQuotaPill();
+    }
+  }
+
+  function closeModelSwitcherPopover() {
+    const pop = $('model-switcher-popover');
+    const trigger = $('btn-model-picker');
+    if (pop && !pop.hidden) {
+      pop.hidden = true;
+      if (trigger) {
+        trigger.setAttribute('aria-expanded', 'false');
+        trigger.classList.remove('is-active');
+      }
+    }
+  }
+
+  /**
+   * 切换权限执行模式 (Turbo -> Auto -> Accept-Edits -> Plan 循环)
+   */
+  function cyclePermissionMode() {
+    const modes = [
+      { label: 'Turbo', mode: 'auto', skip: true },
+      { label: 'Auto', mode: 'auto', skip: false },
+      { label: 'Accept-Edits', mode: 'accept-edits', skip: false },
+      { label: 'Plan', mode: 'plan', skip: false }
+    ];
+
+    const currentMode = $('select-mode')?.value || 'auto';
+    const currentSkip = Boolean($('chk-skip-permissions')?.checked);
+
+    let idx = 0;
+    if (currentMode === 'auto' && currentSkip) idx = 0;
+    else if (currentMode === 'auto' && !currentSkip) idx = 1;
+    else if (currentMode === 'accept-edits') idx = 2;
+    else if (currentMode === 'plan') idx = 3;
+
+    const next = modes[(idx + 1) % modes.length];
+
+    const modeSel = $('select-mode');
+    const chkSkip = $('chk-skip-permissions');
+    if (modeSel) {
+      modeSel.value = next.mode;
+      modeSel.dispatchEvent(new Event('change'));
+    }
+    if (chkSkip) {
+      chkSkip.checked = next.skip;
+      chkSkip.dispatchEvent(new Event('change'));
+    }
+
+    const labelEl = $('mode-picker-label');
+    if (labelEl) labelEl.textContent = next.label;
+
+    updateCliPreview();
+    showToast(`执行模式已切换为：${next.label}`);
+  }
+
   /** 填充底部控制栏的模型、Effort、Mode 下拉框 */
   function populateControlSelects() {
     const modelSel = $('select-model');
     if (modelSel) {
-      const prev = modelSel.value || localStorage.getItem('agy_model') || '';
-      const models = state.models.length ? state.models : ['gemini-3.8-flash-high', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-low', 'claude-sonnet-4-6'];
+      const prev = modelSel.value || localStorage.getItem('agy_model') || 'gemini-3.8-flash-high';
+      const models = state.models.length ? state.models : ['gemini-3.8-flash-high', 'claude-sonnet-4-6', 'claude-opus-4-6-thinking', 'gpt-oss-120b-medium'];
       modelSel.innerHTML = models.map((m) => {
         const val = typeof m === 'string' ? m : (m.id || m.modelId || m.name);
-        const label = typeof m === 'string' ? m : (m.label || m.name || val);
-        return `<option value="${escapeHtml(val)}">${escapeHtml(label)}</option>`;
+        const info = formatOfficialModel(val);
+        return `<option value="${escapeHtml(val)}">${escapeHtml(info.displayName)}</option>`;
       }).join('');
       if (prev && Array.from(modelSel.options).some((o) => o.value === prev)) {
         modelSel.value = prev;
       }
+      // 初始化输入框模型胶囊文字
+      const activeInfo = formatOfficialModel(modelSel.value || 'gemini-3.8-flash-high');
+      if ($('model-picker-name')) $('model-picker-name').textContent = activeInfo.displayName;
+      if ($('ctx-panel-model-pill')) $('ctx-panel-model-pill').textContent = activeInfo.displayName;
     }
 
     const effortSel = $('select-effort');
@@ -2323,6 +2632,9 @@
       modeSel.innerHTML = state.modes.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
       if (state.modes.includes(prev)) modeSel.value = prev;
     }
+
+    renderModelSwitcherList();
+    updateModelPickerQuotaPill();
   }
 
   async function refreshProjects() {
@@ -2875,6 +3187,11 @@
       }
       crumbEl.textContent = projectName || '未选择项目';
       crumbEl.title = state.workspace ? `当前工作区: ${state.workspace}` : (projectName || '点击选择项目目录');
+      if ($('composer-project-name')) $('composer-project-name').textContent = projectName || 'antigravity-project';
+    }
+
+    if ($('composer-branch-name') && state.workspaceOverview?.branch) {
+      $('composer-branch-name').textContent = state.workspaceOverview.branch;
     }
 
     const badge = $('bound-conv-badge');
@@ -3477,7 +3794,9 @@
   function renderGitOverview(data) {
     if (!data) return;
     const notGit = data.isGit === false || data.isGitRepo === false;
-    $('git-branch-name').textContent = data.branch || (notGit ? '非 Git 仓库' : 'HEAD');
+    const branchName = data.branch || (notGit ? '非 Git 仓库' : 'HEAD');
+    $('git-branch-name').textContent = branchName;
+    if ($('composer-branch-name')) $('composer-branch-name').textContent = branchName;
 
     const statusList = $('git-status-list');
     let changes = [];
@@ -4282,6 +4601,54 @@
       if (img) openLightbox(img.dataset.lightboxSrc, img.dataset.lightboxCaption);
     });
 
+    // 官方 1:1 模型选择胶囊、模式切换胶囊与额度浮层事件绑定
+    $('btn-model-picker')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleModelSwitcherPopover();
+    });
+    $('btn-mode-picker')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      cyclePermissionMode();
+    });
+    $('btn-toggle-usage-view')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const usageEl = $('model-popover-usage');
+      const trigger = $('btn-toggle-usage-view');
+      if (usageEl) {
+        usageEl.hidden = !usageEl.hidden;
+        if (trigger) {
+          trigger.classList.toggle('is-expanded', !usageEl.hidden);
+          trigger.setAttribute('aria-expanded', String(!usageEl.hidden));
+        }
+      }
+    });
+    $('btn-refresh-usage')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      refreshUsageLimits();
+    });
+    $('composer-project-pill')?.addEventListener('click', () => {
+      openDirPicker('project', state.workspace);
+    });
+
+    // 点击页面其他区域关闭模型与额度弹窗
+    document.addEventListener('click', (e) => {
+      const pop = $('model-switcher-popover');
+      const trigger = $('btn-model-picker');
+      if (pop && !pop.hidden && !pop.contains(e.target) && !trigger?.contains(e.target)) {
+        closeModelSwitcherPopover();
+      }
+    });
+
+    // 快捷键 Alt+M (或 Option+M) 呼出模型选择菜单
+    window.addEventListener('keydown', (e) => {
+      if ((e.altKey && e.code === 'KeyM') || (e.ctrlKey && e.shiftKey && e.code === 'KeyM')) {
+        e.preventDefault();
+        toggleModelSwitcherPopover();
+      } else if (e.key === 'Escape') {
+        closeModelSwitcherPopover();
+      }
+    });
+
     // 模型参数控制联动
     ['select-model', 'select-effort', 'select-mode', 'chk-skip-permissions'].forEach((id) => {
       $(id)?.addEventListener('change', () => {
@@ -4289,6 +4656,12 @@
           if (!state.activeConversationId) {
             state.contextMetrics.model = $('select-model')?.value || '';
           }
+          const activeVal = $('select-model')?.value || '';
+          const info = formatOfficialModel(activeVal);
+          if ($('model-picker-name')) $('model-picker-name').textContent = info.displayName;
+          if ($('ctx-panel-model-pill')) $('ctx-panel-model-pill').textContent = info.displayName;
+          updateModelPickerQuotaPill();
+          renderModelSwitcherList();
           syncActiveModelBudget(state.modelCtxOverrides);
         }
         updateCliPreview();

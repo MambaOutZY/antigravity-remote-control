@@ -234,7 +234,7 @@ async function serveStaticAsset(req, res, pathname, publicDir) {
     res.writeHead(200, {
       'Content-Type': contentType,
       'Content-Length': data.length,
-      'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=300',
+      'Cache-Control': (ext === '.html' || ext === '.js' || ext === '.css') ? 'no-cache, must-revalidate' : 'public, max-age=300',
       'X-Content-Type-Options': 'nosniff'
     });
     res.end(data);
