@@ -16,6 +16,7 @@ const {
   streamAgyTurn,
   inspectWorkspaceGit
 } = require('./lib/agy-runner');
+const { getRegisteredCommands } = require('./lib/command-registry');
 
 const DEFAULT_PORT = 8787;
 const DEFAULT_HOST = '0.0.0.0';
@@ -520,10 +521,18 @@ function createAppServer(options = {}) {
           defaultWorkspace: getDefaultWorkspace(),
           projects: projectData?.projects || [],
           conversations: convAudit?.conversations || [],
+          commands: getRegisteredCommands({ homeDir: os.homedir() }),
           tokenSummary: historyData?.summary
             ? { ...historyData.summary, costSummary: historyData.costSummary || null }
             : null
         });
+        return;
+      }
+
+      // 5.5 官方指令与提及列表（供 / 与 @ 呼出补全）
+      if (method === 'GET' && pathname === '/api/commands') {
+        const cmdData = getRegisteredCommands({ homeDir: os.homedir() });
+        sendJson(res, 200, { ok: true, ...cmdData });
         return;
       }
 

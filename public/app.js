@@ -2207,6 +2207,15 @@
       renderConversationList();
       renderChatHeader();
 
+      if (data.commands) {
+        if (Array.isArray(data.commands.slashCommands) && data.commands.slashCommands.length) {
+          suggestState.allSlashCommands = data.commands.slashCommands;
+        }
+        if (Array.isArray(data.commands.mentions) && data.commands.mentions.length) {
+          suggestState.allMentions = data.commands.mentions;
+        }
+      }
+
       if (data.tokenSummary) {
         renderHistoryDashboard({ summary: data.tokenSummary, costSummary: data.tokenSummary.costSummary });
       }
@@ -3968,12 +3977,55 @@
     promptInput?.addEventListener('input', () => {
       autoResizeTextarea(promptInput);
       updateCliPreview();
+      handlePromptInputSuggest();
     });
-    // Enter 发送、Shift+Enter 换行（忽略输入法合成期间的 Enter）
+    promptInput?.addEventListener('click', () => {
+      handlePromptInputSuggest();
+    });
+    promptInput?.addEventListener('keyup', (e) => {
+      if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+        handlePromptInputSuggest();
+      }
+    });
+    // Enter 发送、Shift+Enter 换行（若处于补全弹窗则优先进行指令选中补全）
     promptInput?.addEventListener('keydown', (e) => {
+      if (suggestState.active) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          moveSuggestSelection(1);
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          moveSuggestSelection(-1);
+          return;
+        }
+        if (e.key === 'Enter' || e.key === 'Tab') {
+          if (!e.isComposing && e.keyCode !== 229) {
+            if (suggestState.items.length > 0) {
+              e.preventDefault();
+              applySuggestion(suggestState.items[suggestState.selectedIndex]);
+              return;
+            }
+          }
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          hideSuggestPopover();
+          return;
+        }
+      }
+
       if (!e.shiftKey && !e.isComposing && e.keyCode !== 229 && e.key === 'Enter') {
         e.preventDefault();
         handleSendPrompt();
+      }
+    });
+
+    // 点击页面其他区域自动关闭补全浮层
+    document.addEventListener('click', (e) => {
+      if (suggestState.active && !e.target.closest('#composer-suggest-popover') && e.target !== promptInput) {
+        hideSuggestPopover();
       }
     });
     promptInput?.addEventListener('paste', (e) => {
@@ -4349,6 +4401,264 @@
         if (await copyText(deepLink)) showToast('已复制会话直达链接');
       }
     };
+  }
+
+  // --------------------------------------------------------------------------
+  // / 与 @ 呼出指令与上下文提及补全控制器（完全对标 Antigravity 官方 Remote Control）
+  // --------------------------------------------------------------------------
+
+  const DEFAULT_SLASH_COMMANDS = [
+    { name: 'mcpx:dsh-openclaw-ecosystem_rea:investigate_feature', prefix: '/', kind: 'tool', icon: 'tool', description: 'Trace a feature through relevant artifact, symbol, and function evidence.' },
+    { name: 'mcpx:dsh-openclaw-ecosystem_rea:compare_application_versions', prefix: '/', kind: 'tool', icon: 'tool', description: 'Compare two shipped application artifacts through complete analysis.' },
+    { name: 'mcpx:dsh-openclaw-ecosystem_rea:verify_reconstruction', prefix: '/', kind: 'tool', icon: 'tool', description: 'Evaluate a finite reconstruction specification against retained evidence.' },
+    { name: 'mcpx:dsh-openclaw-ecosystem_rea:trace_crash', prefix: '/', kind: 'tool', icon: 'tool', description: 'Correlate a crash symptom with static call and reference evidence plus optional stack.' },
+    { name: 'mcpx:dsh-openclaw-ecosystem_rea:audit_residual_unknowns', prefix: '/', kind: 'tool', icon: 'tool', description: 'Review current residual-unknown heads against retained evidence.' },
+    { name: 'mcpx:dsh-openclaw-ecosystem_rea:prepare_bounded_process_capture', prefix: '/', kind: 'tool', icon: 'tool', description: 'Choose a command, inputs, observations, and stopping condition for dynamic trace.' },
+    { name: 'goal', prefix: '/', kind: 'command', icon: 'goal', description: 'Run until the specified goal is completely finished.' },
+    { name: 'compact', prefix: '/', kind: 'command', icon: 'compact', description: 'Compact the conversation now (summarize history to free up the context window).' },
+    { name: 'plan', prefix: '/', kind: 'command', icon: 'plan', description: 'Enter step-by-step planning mode before execution.' },
+    { name: 'grill-me', prefix: '/', kind: 'command', icon: 'chat', description: 'Interactive interview before coding to resolve design decisions.' },
+    { name: 'browser', prefix: '/', kind: 'command', icon: 'browser', description: 'Operate live web pages via built-in browser agent.' },
+    { name: 'schedule', prefix: '/', kind: 'command', icon: 'clock', description: 'Schedule recurring cron or one-shot automation task.' },
+    { name: 'teamwork', prefix: '/', kind: 'command', icon: 'team', description: 'Autonomous multi-agent teamwork.' },
+    { name: 'learn', prefix: '/', kind: 'command', icon: 'book', description: 'Persist behavior or setup for future tasks.' },
+    { name: 'boost', prefix: '/', kind: 'command', icon: 'zap', description: 'Deep thinking, strategic planning, multiple perspectives.' },
+    { name: 'status', prefix: '/', kind: 'command', icon: 'info', description: 'Show current CLI status and context statistics.' },
+    { name: 'clear', prefix: '/', kind: 'command', icon: 'trash', description: 'Clear messages from display.' }
+  ];
+
+  const DEFAULT_MENTIONS = [
+    { name: 'file', prefix: '@', kind: 'mention', icon: 'file', description: 'Reference a file in the workspace' },
+    { name: 'folder', prefix: '@', kind: 'mention', icon: 'folder', description: 'Reference a directory tree' },
+    { name: 'git', prefix: '@', kind: 'mention', icon: 'git', description: 'Include current Git status, diff, or recent commits' },
+    { name: 'terminal', prefix: '@', kind: 'mention', icon: 'terminal', description: 'Reference recent terminal command output' },
+    { name: 'problems', prefix: '@', kind: 'mention', icon: 'alert', description: 'Include code diagnostics & compiler errors' },
+    { name: 'docs', prefix: '@', kind: 'mention', icon: 'book', description: 'Reference project documentation & README' },
+    { name: 'browser', prefix: '@', kind: 'mention', icon: 'browser', description: 'Delegate task to browser agent' },
+    { name: 'research', prefix: '@', kind: 'mention', icon: 'search', description: 'Delegate to read-only research agent' },
+    { name: 'workspace', prefix: '@', kind: 'mention', icon: 'box', description: 'Overview of active workspace' }
+  ];
+
+  const suggestState = {
+    active: false,
+    trigger: '',
+    triggerPos: -1,
+    query: '',
+    items: [],
+    selectedIndex: 0,
+    allSlashCommands: [...DEFAULT_SLASH_COMMANDS],
+    allMentions: [...DEFAULT_MENTIONS]
+  };
+
+  function renderSuggestIconSvg(icon) {
+    if (icon === 'tool') {
+      return `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2.5"/><path d="M6 8h4M8 6v4"/></svg>`;
+    }
+    if (icon === 'goal') {
+      return `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.5"/></svg>`;
+    }
+    if (icon === 'compact') {
+      return `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h8M4 5l4 3-4 3M12 5l-4 3 4 3"/></svg>`;
+    }
+    if (icon === 'plan') {
+      return `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="2" width="10" height="12" rx="1.5"/><path d="M6 5h4M6 8h4M6 11h2"/></svg>`;
+    }
+    if (icon === 'browser') {
+      return `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2a9 9 0 0 1 0 12 9 9 0 0 1 0-12"/></svg>`;
+    }
+    if (icon === 'file') {
+      return `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 2h6l3.5 3.5V14H3.5z"/><path d="M9.5 2v4h4"/></svg>`;
+    }
+    if (icon === 'folder') {
+      return `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5h4l1.5 2h6.5v7H2z"/></svg>`;
+    }
+    if (icon === 'git') {
+      return `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="4.5" cy="4.5" r="2"/><circle cx="4.5" cy="11.5" r="2"/><circle cx="11.5" cy="7.5" r="2"/><path d="M4.5 6.5v3M4.5 8c2 0 4.5-.5 7-.5"/></svg>`;
+    }
+    if (icon === 'terminal') {
+      return `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M5 6.5l2 1.5-2 1.5M8.5 9.5h2.5"/></svg>`;
+    }
+    if (icon === 'alert') {
+      return `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v4M8 11.5h.01"/></svg>`;
+    }
+    if (icon === 'clock') {
+      return `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/></svg>`;
+    }
+    if (icon === 'team') {
+      return `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.5"/><circle cx="11.5" cy="6.5" r="2"/><path d="M2.5 13.5c0-2.2 2-3.5 4.5-3.5s4.5 1.3 4.5 3.5M10.5 10c1.5.3 3 1.2 3 3.5"/></svg>`;
+    }
+    if (icon === 'book') {
+      return `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5a2 2 0 0 1 2-2h8.5v12H4.5a2 2 0 0 0-2 2z"/><path d="M2.5 3.5v10"/></svg>`;
+    }
+    if (icon === 'zap') {
+      return `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 1.5L2.5 9h5l-1 5.5 7-8h-5z"/></svg>`;
+    }
+    return `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/></svg>`;
+  }
+
+  function highlightSuggestMatch(text, query) {
+    if (!query) return escapeHtml(text);
+    const idx = text.toLowerCase().indexOf(query.toLowerCase());
+    if (idx === -1) return escapeHtml(text);
+    const before = escapeHtml(text.slice(0, idx));
+    const match = escapeHtml(text.slice(idx, idx + query.length));
+    const after = escapeHtml(text.slice(idx + query.length));
+    return `${before}<span class="suggest-match">${match}</span>${after}`;
+  }
+
+  function openSuggestPopover(trigger, query, triggerPos) {
+    const pop = $('composer-suggest-popover');
+    const titleEl = $('suggest-head-title');
+    const badgeEl = $('suggest-head-badge');
+    const listEl = $('suggest-list');
+    if (!pop || !listEl) return;
+
+    suggestState.active = true;
+    suggestState.trigger = trigger;
+    suggestState.triggerPos = triggerPos;
+    suggestState.query = query;
+
+    const source = trigger === '/' ? suggestState.allSlashCommands : suggestState.allMentions;
+    const filtered = source.filter((item) => {
+      if (!query) return true;
+      const n = (item.name || '').toLowerCase();
+      const d = (item.description || '').toLowerCase();
+      return n.includes(query) || d.includes(query);
+    });
+
+    suggestState.items = filtered;
+    suggestState.selectedIndex = 0;
+
+    if (titleEl) titleEl.textContent = trigger === '/' ? '指令与工具' : '上下文提及与引用';
+    if (badgeEl) badgeEl.textContent = trigger;
+
+    renderSuggestListDom();
+    pop.hidden = false;
+  }
+
+  function hideSuggestPopover() {
+    const pop = $('composer-suggest-popover');
+    if (pop) pop.hidden = true;
+    suggestState.active = false;
+    suggestState.items = [];
+    suggestState.selectedIndex = 0;
+  }
+
+  function renderSuggestListDom() {
+    const listEl = $('suggest-list');
+    if (!listEl) return;
+    if (!suggestState.items.length) {
+      listEl.innerHTML = `<div class="suggest-empty">未匹配到相关${suggestState.trigger === '/' ? '指令或工具' : '上下文引用'}</div>`;
+      return;
+    }
+
+    listEl.innerHTML = suggestState.items.map((item, idx) => {
+      const isSelected = idx === suggestState.selectedIndex;
+      const iconHtml = renderSuggestIconSvg(item.icon || item.kind);
+      const highlightedName = highlightSuggestMatch(item.name, suggestState.query);
+      return `
+        <div class="suggest-item${isSelected ? ' is-selected' : ''}" data-suggest-index="${idx}" role="option" aria-selected="${isSelected}">
+          <span class="suggest-icon">${iconHtml}</span>
+          <span class="suggest-name">${highlightedName}</span>
+          <span class="suggest-desc" title="${escapeHtml(item.description || '')}">${escapeHtml(item.description || '')}</span>
+        </div>
+      `;
+    }).join('');
+
+    listEl.querySelectorAll('.suggest-item').forEach((el) => {
+      el.addEventListener('mouseenter', () => {
+        const idx = Number(el.dataset.suggestIndex);
+        if (!isNaN(idx) && idx !== suggestState.selectedIndex) {
+          suggestState.selectedIndex = idx;
+          updateSuggestSelectionStyles();
+        }
+      });
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const idx = Number(el.dataset.suggestIndex);
+        if (!isNaN(idx) && suggestState.items[idx]) {
+          applySuggestion(suggestState.items[idx]);
+        }
+      });
+    });
+
+    scrollSuggestSelectedIntoView();
+  }
+
+  function updateSuggestSelectionStyles() {
+    const listEl = $('suggest-list');
+    if (!listEl) return;
+    const items = listEl.querySelectorAll('.suggest-item');
+    items.forEach((it, idx) => {
+      const isSel = idx === suggestState.selectedIndex;
+      it.classList.toggle('is-selected', isSel);
+      it.setAttribute('aria-selected', isSel ? 'true' : 'false');
+    });
+    scrollSuggestSelectedIntoView();
+  }
+
+  function scrollSuggestSelectedIntoView() {
+    const listEl = $('suggest-list');
+    if (!listEl) return;
+    const activeEl = listEl.querySelector('.suggest-item.is-selected');
+    if (activeEl) {
+      activeEl.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function moveSuggestSelection(delta) {
+    if (!suggestState.items.length) return;
+    const count = suggestState.items.length;
+    suggestState.selectedIndex = (suggestState.selectedIndex + delta + count) % count;
+    updateSuggestSelectionStyles();
+  }
+
+  function applySuggestion(item) {
+    const input = $('prompt-input');
+    if (!input || !item) return;
+
+    const cursorPos = input.selectionStart;
+    const text = input.value;
+    const start = suggestState.triggerPos;
+    const prefix = suggestState.trigger;
+
+    // 格式化补全内容：保留指令前缀并附带一个空格，方便后续打参数
+    const nameWithPrefix = item.name.startsWith(prefix) ? item.name : `${prefix}${item.name}`;
+    const insertText = `${nameWithPrefix} `;
+
+    const before = text.slice(0, start);
+    const after = text.slice(cursorPos);
+    input.value = before + insertText + after;
+
+    const nextPos = start + insertText.length;
+    input.focus();
+    input.setSelectionRange(nextPos, nextPos);
+
+    hideSuggestPopover();
+    autoResizeTextarea(input);
+    updateCliPreview();
+  }
+
+  function handlePromptInputSuggest() {
+    const input = $('prompt-input');
+    if (!input) return;
+
+    const cursorPos = input.selectionStart;
+    const textBefore = input.value.slice(0, cursorPos);
+
+    // 匹配光标紧邻的 token：以 / 或 @ 开头（允许在段首或空白符后）
+    const match = textBefore.match(/(?:^|[\s\n])([\/@][^\s\n]*)$/);
+    if (!match) {
+      hideSuggestPopover();
+      return;
+    }
+
+    const token = match[1];
+    const trigger = token[0]; // '/' 或 '@'
+    const query = token.slice(1).trim().toLowerCase();
+    const tokenStartPos = cursorPos - token.length;
+
+    openSuggestPopover(trigger, query, tokenStartPos);
   }
 
   // 启动入口

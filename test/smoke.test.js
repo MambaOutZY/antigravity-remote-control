@@ -1193,4 +1193,43 @@ describe('扩展能力：项目分组、目录浏览、账号切换与代理桥�
     const detailAfterDel = await fetch(`${baseUrl}/api/conversations/${encodeURIComponent(targetDelId)}`);
     assert.equal(detailAfterDel.status, 404);
   });
+
+  it('14. GET /api/commands 与 bootstrap.commands 验证官方 Slash Commands 与 @ Mentions 注册表', async () => {
+    // 1. 测试独立路由 GET /api/commands
+    const cmdRes = await fetch(`${baseUrl}/api/commands`);
+    assert.equal(cmdRes.status, 200);
+    const cmdJson = await cmdRes.json();
+    assert.equal(cmdJson.ok, true);
+    assert.ok(Array.isArray(cmdJson.slashCommands) && cmdJson.slashCommands.length > 0);
+    assert.ok(Array.isArray(cmdJson.mentions) && cmdJson.mentions.length > 0);
+
+    // 验证核心官方指令存在
+    const slashNames = cmdJson.slashCommands.map((c) => c.name);
+    assert.ok(slashNames.includes('goal'), '应当包含 /goal 指令');
+    assert.ok(slashNames.includes('compact'), '应当包含 /compact 指令');
+    assert.ok(slashNames.includes('plan'), '应当包含 /plan 指令');
+    assert.ok(slashNames.includes('browser'), '应当包含 /browser 指令');
+    assert.ok(
+      slashNames.some((n) => n.includes('investigate_feature')),
+      '应当包含官方截图中的 REA MCP 工具'
+    );
+
+    // 验证核心上下文提及存在
+    const mentionNames = cmdJson.mentions.map((m) => m.name);
+    assert.ok(mentionNames.includes('file'), '应当包含 @file 提及');
+    assert.ok(mentionNames.includes('git'), '应当包含 @git 提及');
+    assert.ok(mentionNames.includes('folder'), '应当包含 @folder 提及');
+
+    // 2. 验证 GET /api/bootstrap 同步携带 commands
+    const bootRes = await fetch(`${baseUrl}/api/bootstrap`);
+    const bootJson = await bootRes.json();
+    assert.ok(bootJson.commands, 'bootstrap 应包含 commands 字段');
+    assert.ok(Array.isArray(bootJson.commands.slashCommands));
+    assert.ok(Array.isArray(bootJson.commands.mentions));
+
+    // 3. 验证前端 HTML 中已包含补全 popover DOM 容器
+    const htmlText = await (await fetch(`${baseUrl}/`)).text();
+    assert.ok(htmlText.includes('id="composer-suggest-popover"'));
+    assert.ok(htmlText.includes('id="suggest-list"'));
+  });
 });
