@@ -1310,14 +1310,32 @@ body.aux-collapsed .aux-pane {
 }
 
 .conv-quick-actions {
-  display: none;
+  display: inline-flex;
   align-items: center;
   gap: 2px;
 }
 
-.conv-item:hover .conv-quick-actions,
-.conv-item.is-menu-open .conv-quick-actions,
-.conv-item:focus-within .conv-quick-actions {
+.conv-quick-actions [data-conv-archive],
+.conv-quick-actions [data-conv-pin] {
+  display: none;
+}
+
+.conv-quick-actions [data-conv-menu] {
+  opacity: 0.65;
+}
+
+.conv-item.is-active .conv-quick-actions [data-conv-menu],
+.conv-item:hover .conv-quick-actions [data-conv-menu],
+.conv-item.is-menu-open .conv-quick-actions [data-conv-menu] {
+  opacity: 1;
+}
+
+.conv-item:hover .conv-quick-actions [data-conv-archive],
+.conv-item:hover .conv-quick-actions [data-conv-pin],
+.conv-item.is-menu-open .conv-quick-actions [data-conv-archive],
+.conv-item.is-menu-open .conv-quick-actions [data-conv-pin],
+.conv-item:focus-within .conv-quick-actions [data-conv-archive],
+.conv-item:focus-within .conv-quick-actions [data-conv-pin] {
   display: inline-flex;
 }
 
