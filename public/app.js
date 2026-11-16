@@ -2730,9 +2730,13 @@
     const kw = state.convSearch.trim().toLowerCase();
     const groupMap = new Map();
 
-    // 先填入后端返回的已知项目，保证空项目也出现在侧边栏便于随时新建对话
+    // 先填入后端返回的已知项目（按路径去重），保证默认项目与自定义项目正常出现
+    const seenWsKeys = new Set();
     (state.projects || []).forEach((p) => {
       if (!p || !p.id) return;
+      const wsKey = (p.workspacePath || '').trim().toLowerCase();
+      if (wsKey && seenWsKeys.has(wsKey)) return;
+      if (wsKey) seenWsKeys.add(wsKey);
       groupMap.set(p.id, {
         id: p.id,
         name: p.name || getPathBasename(p.workspacePath) || '未命名项目',
