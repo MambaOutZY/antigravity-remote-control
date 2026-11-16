@@ -973,16 +973,27 @@
   function getNormalizedModelList() {
     const rawModels = state.models.length
       ? state.models
-      : ['gemini-3.8-flash-high', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-low', 'claude-sonnet-4-6'];
+      : [
+          'gemini-3.8-flash-high',
+          'gemini-3.8-flash-medium',
+          'gemini-3.8-flash-low',
+          'gemini-4-argon',
+          'gemini-4-carbon',
+          'gemini-4-hydrogen',
+          'claude-sonnet-4-6',
+          'claude-opus-4-6-thinking',
+          'gpt-oss-120b-medium'
+        ];
     const map = new Map();
 
     rawModels.forEach((m) => {
       const id = typeof m === 'string' ? m : (m.id || m.modelId || m.name || '');
       if (!id) return;
-      const label = typeof m === 'string' ? id : (m.label || m.name || id);
+      const info = formatOfficialModel(id);
+      const label = info.displayName || id;
       const defBudget = typeof m === 'object'
-        ? Number(m.contextWindow || m.maxContextTokens || m.limitTokens || m.budget || DEFAULT_BUDGET)
-        : DEFAULT_BUDGET;
+        ? Number(m.contextWindow || m.maxContextTokens || m.limitTokens || m.budget || (id.includes('gemini-4') ? 1048576 : DEFAULT_BUDGET))
+        : (id.includes('gemini-4') ? 1048576 : DEFAULT_BUDGET);
       map.set(id, { id, label, defaultBudget: Number.isFinite(defBudget) && defBudget > 0 ? defBudget : DEFAULT_BUDGET });
     });
 
@@ -2348,13 +2359,16 @@
       return { id: 'gpt-oss-120b-medium', displayName: 'GPT-OSS 120B (Medium)', badge: 'Notice', group: 'claude', status: 'available' };
     }
     if (id.includes('gemini-4-carbon')) {
-      return { id: 'gemini-4-carbon', displayName: 'Gemini 4 Carbon', badge: 'Unavailable', group: 'gemini', status: 'unavailable' };
+      return { id: 'gemini-4-carbon', displayName: 'Gemini 4 Carbon', badge: '', group: 'gemini', status: 'available' };
     }
     if (id.includes('gemini-4-argon')) {
-      return { id: 'gemini-4-argon', displayName: 'Gemini 4 Argon', badge: 'Unavailable', group: 'gemini', status: 'unavailable' };
+      return { id: 'gemini-4-argon', displayName: 'Gemini 4 Argon', badge: '', group: 'gemini', status: 'available' };
     }
     if (id.includes('gemini-4-hydrogen')) {
-      return { id: 'gemini-4-hydrogen', displayName: 'Gemini 4 Hydrogen', badge: 'Unavailable', group: 'gemini', status: 'unavailable' };
+      return { id: 'gemini-4-hydrogen', displayName: 'Gemini 4 Hydrogen', badge: '', group: 'gemini', status: 'available' };
+    }
+    if (id === 'gemini-4' || id.startsWith('gemini-4')) {
+      return { id: 'gemini-4', displayName: 'Gemini 4', badge: '', group: 'gemini', status: 'available' };
     }
     // 兜底通用美化命名
     const pretty = rawId.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -2474,15 +2488,15 @@
 
     const activeModelId = $('select-model')?.value || 'gemini-3.8-flash-high';
 
-    // 官方标准展示模型项全集
+    // 官方标准展示模型项全集（全面支持 Gemini 4 与 Claude/GPT 自由切换）
     const OFFICIAL_MENU_ITEMS = [
       { id: 'gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash High', badge: '', status: 'available' },
+      { id: 'gemini-4-argon', displayName: 'Gemini 4 Argon', badge: '', status: 'available' },
+      { id: 'gemini-4-carbon', displayName: 'Gemini 4 Carbon', badge: '', status: 'available' },
+      { id: 'gemini-4-hydrogen', displayName: 'Gemini 4 Hydrogen', badge: '', status: 'available' },
       { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', badge: 'Notice', status: 'available' },
       { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', badge: 'Notice', status: 'available' },
-      { id: 'gpt-oss-120b-medium', displayName: 'GPT-OSS 120B (Medium)', badge: 'Notice', status: 'available' },
-      { id: 'gemini-4-carbon', displayName: 'Gemini 4 Carbon', badge: 'Unavailable', status: 'unavailable' },
-      { id: 'gemini-4-argon', displayName: 'Gemini 4 Argon', badge: 'Unavailable', status: 'unavailable' },
-      { id: 'gemini-4-hydrogen', displayName: 'Gemini 4 Hydrogen', badge: 'Unavailable', status: 'unavailable' }
+      { id: 'gpt-oss-120b-medium', displayName: 'GPT-OSS 120B (Medium)', badge: 'Notice', status: 'available' }
     ];
 
     // 将后端返回的其它自定义可用模型（如 medium/low）也平滑整合
@@ -2643,7 +2657,7 @@
     const modelSel = $('select-model');
     if (modelSel) {
       const prev = modelSel.value || localStorage.getItem('agy_model') || 'gemini-3.8-flash-high';
-      const models = state.models.length ? state.models : ['gemini-3.8-flash-high', 'claude-sonnet-4-6', 'claude-opus-4-6-thinking', 'gpt-oss-120b-medium'];
+      const models = state.models.length ? state.models : ['gemini-3.8-flash-high', 'gemini-4-argon', 'claude-sonnet-4-6', 'claude-opus-4-6-thinking', 'gpt-oss-120b-medium'];
       modelSel.innerHTML = models.map((m) => {
         const val = typeof m === 'string' ? m : (m.id || m.modelId || m.name);
         const info = formatOfficialModel(val);
@@ -2736,11 +2750,18 @@
         if (!hay.includes(kw)) return;
       }
       const ws = c.workspacePath || c.workspace || '';
-      const key = c.projectId || (ws ? `ws:${ws}` : '__unassigned__');
+      // 仅匹配显式允许展示的项目（默认展示 /home/workspace 与手动新建项目，隐藏其它历史临时目录）
+      const matchedProj = (state.projects || []).find((p) => {
+        if (!p || !p.id) return false;
+        if (c.projectId && p.id === c.projectId) return true;
+        if (p.workspacePath && ws && (p.workspacePath === ws || p.workspacePath.toLowerCase() === ws.toLowerCase())) return true;
+        return false;
+      });
+      const key = matchedProj ? matchedProj.id : '__unassigned__';
       if (!groupMap.has(key)) {
         groupMap.set(key, {
           id: key,
-          name: c.projectName || getPathBasename(ws) || '未归类会话',
+          name: key === '__unassigned__' ? '未归类会话' : (c.projectName || getPathBasename(ws) || '未归类会话'),
           workspacePath: ws,
           convs: []
         });

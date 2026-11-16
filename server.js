@@ -1055,7 +1055,12 @@ function createAppServer(options = {}) {
 
         // 账号切换后随响应返回最新模型列表与实时额度限制，供前端瞬间刷新
         try {
-          const freshModels = await runner.listAvailableModels({ timeoutMs: 3000 });
+          const fetchModelsFn = runner.getAvailableModels || runner.listAvailableModels;
+          const freshModels = await fetchModelsFn({
+            timeoutMs: 4000,
+            binPath: getAgyBinOption(),
+            proxyOpts: getSwitchOpts()
+          });
           if (Array.isArray(freshModels) && freshModels.length > 0) {
             result.models = freshModels;
           }
@@ -1065,8 +1070,8 @@ function createAppServer(options = {}) {
 
         try {
           result.usageLimits = meterEngine.getUsageLimits({
-            agDir: options.agDir,
-            agCliDir: options.agCliDir
+            ...getMeterOpts(),
+            activeEmail: result.email
           });
         } catch {
           // 容错降级
