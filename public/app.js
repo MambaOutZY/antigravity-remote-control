@@ -2509,80 +2509,274 @@
   }
 
   /**
-   * 渲染官方 1:1 模型选择弹窗列表（以当前账号真实 state.models 为唯一数据源，按族系/档位智能排序）
+   * 官方标准族系基底模型配置表（完全对齐 Google 官方 Antigravity 沉浸式二级抽屉结构）
+   */
+  const OFFICIAL_BASE_MODELS = [
+    {
+      baseId: 'gemini-4-argon',
+      displayName: 'Gemini 4 Argon',
+      group: 'gemini',
+      badge: '',
+      matchPrefix: 'gemini-4-argon',
+      tierOrder: ['low', 'medium', 'high']
+    },
+    {
+      baseId: 'gemini-4-hydrogen',
+      displayName: 'Gemini 4 Hydrogen',
+      group: 'gemini',
+      badge: '',
+      matchPrefix: 'gemini-4-hydrogen',
+      tierOrder: ['low', 'medium', 'high', 'xhigh']
+    },
+    {
+      baseId: 'gemini-3.8-flash',
+      displayName: 'Gemini 3.8 Flash',
+      group: 'gemini',
+      badge: '',
+      matchPrefix: 'gemini-3.8-flash',
+      tierOrder: ['low', 'medium', 'high']
+    },
+    {
+      baseId: 'claude-sonnet-5-5',
+      displayName: 'Claude Sonnet 5.5',
+      group: 'claude',
+      badge: 'Notice',
+      matchPrefix: 'claude-sonnet-5-5',
+      tierOrder: ['low', 'medium', 'high']
+    },
+    {
+      baseId: 'claude-opus-5-5',
+      displayName: 'Claude Opus 5.5',
+      group: 'claude',
+      badge: 'Notice',
+      matchPrefix: 'claude-opus-5-5',
+      tierOrder: ['low', 'medium', 'high']
+    },
+    {
+      baseId: 'claude-sonnet-4-6',
+      displayName: 'Claude Sonnet 4.6 (Thinking)',
+      group: 'claude',
+      badge: 'Notice',
+      matchPrefix: 'claude-sonnet-4-6',
+      tierOrder: []
+    },
+    {
+      baseId: 'claude-opus-4-6',
+      displayName: 'Claude Opus 4.6 (Thinking)',
+      group: 'claude',
+      badge: 'Notice',
+      matchPrefix: 'claude-opus-4-6',
+      tierOrder: []
+    },
+    {
+      baseId: 'gpt-oss-120b',
+      displayName: 'GPT-OSS 120B (Medium)',
+      group: 'claude',
+      badge: 'Notice',
+      matchPrefix: 'gpt-oss-120b',
+      tierOrder: []
+    },
+    {
+      baseId: 'gemini-pro-orchestrator',
+      displayName: 'Gemini Pro Orchestrator G1 Pro',
+      group: 'gemini',
+      badge: '',
+      matchPrefix: 'gemini-pro-orchestrator',
+      tierOrder: []
+    },
+    {
+      baseId: 'gemini-4-carbon',
+      displayName: 'Gemini 4 Carbon',
+      group: 'gemini',
+      badge: 'Unavailable',
+      status: 'unavailable',
+      matchPrefix: 'gemini-4-carbon',
+      tierOrder: []
+    }
+  ];
+
+  /**
+   * 将当前账号可用模型归纳为官方族系基底模型与思考档位目录
+   */
+  function buildGroupedModelCatalog() {
+    const sourceModels = (Array.isArray(state.models) && state.models.length > 0)
+      ? state.models
+      : ['gemini-3.8-flash-high', 'claude-sonnet-4-6', 'claude-opus-4-6-thinking', 'gpt-oss-120b-medium'];
+
+    const catalog = [];
+    const matchedModelIds = new Set();
+
+    for (const def of OFFICIAL_BASE_MODELS) {
+      const tiers = [];
+      const prefix = def.matchPrefix.toLowerCase();
+
+      for (const rawId of sourceModels) {
+        const mid = (typeof rawId === 'string' ? rawId : (rawId.id || rawId.modelId || rawId.name)).toLowerCase();
+        if (mid === prefix || mid.startsWith(`${prefix}-`)) {
+          matchedModelIds.add(mid);
+          const tierMatch = mid.match(/[-_](xhigh|high|medium|low)$/i);
+          const tierKey = tierMatch ? tierMatch[1].toLowerCase() : 'default';
+          const tierLabel = tierKey === 'xhigh' ? 'X-High' : (tierKey === 'default' ? 'Default' : (tierKey.charAt(0).toUpperCase() + tierKey.slice(1)));
+          tiers.push({
+            modelId: typeof rawId === 'string' ? rawId : mid,
+            tierKey,
+            tierLabel
+          });
+        }
+      }
+
+      // 遵循 Low -> Medium -> High -> X-High 顺序
+      const tierRank = { low: 1, medium: 2, high: 3, xhigh: 4, default: 5 };
+      tiers.sort((a, b) => (tierRank[a.tierKey] || 99) - (tierRank[b.tierKey] || 99));
+
+      if (tiers.length > 0) {
+        catalog.push({
+          baseId: def.baseId,
+          displayName: def.displayName,
+          badge: def.badge,
+          group: def.group,
+          status: 'available',
+          tiers,
+          hasTiers: tiers.length > 1
+        });
+      } else if (def.status === 'unavailable' || def.baseId === 'gemini-4-carbon') {
+        catalog.push({
+          baseId: def.baseId,
+          displayName: def.displayName,
+          badge: 'Unavailable',
+          group: def.group,
+          status: 'unavailable',
+          tiers: [],
+          hasTiers: false
+        });
+      }
+    }
+
+    // 补全其它未列在官方标准配置中的自定义模型
+    for (const rawId of sourceModels) {
+      const mid = (typeof rawId === 'string' ? rawId : (rawId.id || rawId.modelId || rawId.name)).toLowerCase();
+      if (!matchedModelIds.has(mid)) {
+        const info = formatOfficialModel(rawId);
+        catalog.push({
+          baseId: rawId,
+          displayName: info.displayName,
+          badge: info.badge,
+          group: info.group,
+          status: 'available',
+          tiers: [{ modelId: rawId, tierKey: 'default', tierLabel: 'Default' }],
+          hasTiers: false
+        });
+      }
+    }
+
+    return catalog;
+  }
+
+  /**
+   * 渲染官方 1:1 模型选择弹窗列表（收敛思考模式为二级抽屉）
    */
   function renderModelSwitcherList() {
     const listEl = $('model-popover-list');
     if (!listEl) return;
 
     const activeModelId = $('select-model')?.value || localStorage.getItem('agy_model') || '';
+    const catalog = buildGroupedModelCatalog();
 
-    // 数据源 100% 取自当前登录账号真实返回的 models，绝不硬编码假数据污染
-    const sourceModels = (Array.isArray(state.models) && state.models.length > 0)
-      ? state.models
-      : ['gemini-3.8-flash-high', 'claude-sonnet-4-6', 'claude-opus-4-6-thinking', 'gpt-oss-120b-medium'];
-
-    // 格式化并去重
-    const itemsMap = new Map();
-    sourceModels.forEach((m) => {
-      const mid = typeof m === 'string' ? m : (m.id || m.modelId || m.name);
-      if (!mid || itemsMap.has(mid)) return;
-      itemsMap.set(mid, formatOfficialModel(mid));
-    });
-
-    const items = Array.from(itemsMap.values());
-
-    // 智能排序规则：Gemini 4 旗舰 > Gemini 3.8 Flash > Gemini Orchestrator > Claude Opus > Claude Sonnet > GPT/其它
-    const getSortWeight = (item) => {
-      const id = item.id.toLowerCase();
-      let familyRank = 90;
-      if (id.includes('gemini-4-argon')) familyRank = 10;
-      else if (id.includes('gemini-4-hydrogen')) familyRank = 15;
-      else if (id.includes('gemini-4')) familyRank = 18;
-      else if (id.includes('gemini-3.8-flash')) familyRank = 20;
-      else if (id.includes('gemini-pro')) familyRank = 30;
-      else if (id.includes('claude-opus')) familyRank = 40;
-      else if (id.includes('claude-sonnet')) familyRank = 50;
-      else if (id.includes('gpt') || id.includes('oss')) familyRank = 60;
-
-      let tierRank = 5;
-      if (id.includes('xhigh')) tierRank = 1;
-      else if (id.includes('high')) tierRank = 2;
-      else if (id.includes('medium')) tierRank = 3;
-      else if (id.includes('low')) tierRank = 4;
-
-      return familyRank * 10 + tierRank;
-    };
-
-    items.sort((a, b) => getSortWeight(a) - getSortWeight(b));
-
-    listEl.innerHTML = items.map((item) => {
-      const isSelected = item.id === activeModelId;
+    listEl.innerHTML = catalog.map((item) => {
       const isUnavailable = item.status === 'unavailable';
+      const hasTiers = item.hasTiers && item.tiers.length > 1;
+
+      // 判断当前族系基底模型是否匹配当前激活的模型
+      const isBaseSelected = Boolean(item.tiers.some(t => t.modelId === activeModelId));
+      const activeTierObj = item.tiers.find(t => t.modelId === activeModelId)
+        || item.tiers.find(t => t.tierKey === 'high')
+        || item.tiers[item.tiers.length - 1]
+        || item.tiers[0];
+
+      const activeTierLabel = activeTierObj ? activeTierObj.tierLabel : '';
+
       const badgeHtml = item.badge === 'Notice'
         ? `<span class="model-badge-notice">Notice ⓘ</span>`
         : (item.badge === 'Unavailable' ? `<span class="model-badge-unavailable">Unavailable ⓘ</span>` : '');
 
-      const checkHtml = isSelected
+      if (hasTiers && !isUnavailable) {
+        // 官方 1:1 级联抽屉：左侧模型名，右侧当前档位 + > 箭头，悬停/展开时弹出子菜单
+        const subItemsHtml = item.tiers.map((t) => {
+          const isSubSelected = t.modelId === activeModelId;
+          const checkHtml = isSubSelected
+            ? `<svg class="model-item-check" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3.5 8.5l3 3 6-6"/></svg>`
+            : '';
+          return `
+            <button class="model-tier-item${isSubSelected ? ' is-selected' : ''}" type="button" data-model-id="${escapeHtml(t.modelId)}">
+              <span>${escapeHtml(t.tierLabel)}</span>
+              ${checkHtml}
+            </button>
+          `;
+        }).join('');
+
+        return `
+          <div class="model-row-wrap" data-base-id="${escapeHtml(item.baseId)}">
+            <button class="model-popover-item has-tiers${isBaseSelected ? ' is-selected' : ''}" type="button" data-base-id="${escapeHtml(item.baseId)}" data-default-model-id="${escapeHtml(activeTierObj.modelId)}">
+              <div class="model-item-title">
+                <span>${escapeHtml(item.displayName)}</span>
+                ${badgeHtml}
+              </div>
+              <div class="model-item-right">
+                <span class="model-item-tier">${escapeHtml(activeTierLabel)}</span>
+                <svg class="chevron-right-icon" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4l4 4-4 4"/></svg>
+              </div>
+            </button>
+            <div class="model-tier-submenu" role="menu" aria-label="${escapeHtml(item.displayName)} 思考档位">
+              ${subItemsHtml}
+            </div>
+          </div>
+        `;
+      }
+
+      // 单档位模型或不可用模型
+      const singleModelId = item.tiers[0]?.modelId || item.baseId;
+      const checkHtml = (isBaseSelected && !isUnavailable)
         ? `<svg class="model-item-check" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6"/></svg>`
         : '';
 
       return `
-        <button class="model-popover-item${isSelected ? ' is-selected' : ''}${isUnavailable ? ' is-disabled' : ''}" type="button" data-model-id="${escapeHtml(item.id)}" ${isUnavailable ? 'disabled' : ''}>
-          <div class="model-item-title">
-            <span>${escapeHtml(item.displayName)}</span>
-            ${badgeHtml}
-          </div>
-          ${checkHtml}
-        </button>
+        <div class="model-row-wrap" data-base-id="${escapeHtml(item.baseId)}">
+          <button class="model-popover-item${isBaseSelected ? ' is-selected' : ''}${isUnavailable ? ' is-disabled' : ''}" type="button" data-model-id="${escapeHtml(singleModelId)}" ${isUnavailable ? 'disabled' : ''}>
+            <div class="model-item-title">
+              <span>${escapeHtml(item.displayName)}</span>
+              ${badgeHtml}
+            </div>
+            ${checkHtml}
+          </button>
+        </div>
       `;
     }).join('');
 
-    // 点击模型一键快速切换
-    listEl.querySelectorAll('.model-popover-item:not(.is-disabled)').forEach((btn) => {
-      btn.addEventListener('click', () => {
+    // 点击二级抽屉中具体档位进行切换
+    listEl.querySelectorAll('.model-tier-item').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const mid = btn.dataset.modelId;
         if (mid) selectModelQuick(mid);
+      });
+    });
+
+    // 点击主模型项切换或移动端展开
+    listEl.querySelectorAll('.model-popover-item:not(.is-disabled)').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        if (btn.classList.contains('has-tiers')) {
+          const wrap = btn.closest('.model-row-wrap');
+          if (wrap) {
+            wrap.classList.toggle('is-open');
+          }
+          const targetMid = btn.dataset.defaultModelId;
+          if (targetMid) {
+            selectModelQuick(targetMid);
+          }
+        } else {
+          const mid = btn.dataset.modelId;
+          if (mid) selectModelQuick(mid);
+        }
       });
     });
   }

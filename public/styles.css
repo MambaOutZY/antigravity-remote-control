@@ -2600,7 +2600,7 @@ body.aux-collapsed .aux-pane {
   border-radius: 16px;
   box-shadow: 0 20px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05);
   z-index: 1200;
-  overflow: hidden;
+  overflow: visible;
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   animation: modelPopoverFadeIn 0.14s ease-out;
@@ -2629,11 +2629,12 @@ body.aux-collapsed .aux-pane {
 
 /* 主面板：Model 列表 */
 .model-popover-main {
-  width: 270px;
+  width: 280px;
   padding: 10px 8px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  position: relative;
 }
 
 .model-popover-header {
@@ -2660,18 +2661,14 @@ body.aux-collapsed .aux-pane {
 .model-popover-list {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  max-height: 320px;
-  overflow-y: auto;
+  gap: 2px;
+  overflow: visible;
 }
 
-.model-popover-list::-webkit-scrollbar {
-  width: 4px;
-}
-
-.model-popover-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 999px;
+/* 单个模型包装容器（供二级抽屉绝对定位绑定） */
+.model-row-wrap {
+  position: relative;
+  width: 100%;
 }
 
 /* 单个模型项 */
@@ -2680,12 +2677,12 @@ body.aux-collapsed .aux-pane {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 8px 10px;
+  padding: 7px 10px;
   border-radius: 9px;
   border: 0;
   background: transparent;
   color: #e5e7eb;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   text-align: left;
   cursor: pointer;
@@ -2722,6 +2719,121 @@ body.aux-collapsed .aux-pane {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 官方 1:1 右侧信息区域：显示当前思考档位 + > 箭头 */
+.model-item-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.model-item-tier {
+  font-size: 12px;
+  font-weight: 400;
+  color: #9aa0a6;
+}
+
+.chevron-right-icon {
+  color: #9aa0a6;
+  transition: transform 0.12s ease, color 0.12s ease;
+}
+
+/* 官方 1:1 二级思考档位抽屉 (Low / Medium / High / X-High) */
+.model-tier-submenu {
+  display: none;
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 0;
+  min-width: 120px;
+  background: #1e1f20;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  padding: 5px;
+  z-index: 1300;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 悬停安全桥接，防止在 6px 间隙中移动时触发失焦关闭 */
+.model-tier-submenu::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  left: -12px;
+  width: 14px;
+}
+
+/* 悬停或激活状态下展开二级抽屉 */
+.model-row-wrap:hover .model-tier-submenu,
+.model-row-wrap.is-open .model-tier-submenu {
+  display: flex;
+  animation: tierSubmenuFadeIn 0.12s ease-out;
+}
+
+.model-row-wrap:hover .model-popover-item.has-tiers,
+.model-row-wrap.is-open .model-popover-item.has-tiers {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.model-row-wrap:hover .model-item-tier,
+.model-row-wrap.is-open .model-item-tier {
+  color: #e5e7eb;
+}
+
+.model-row-wrap:hover .chevron-right-icon,
+.model-row-wrap.is-open .chevron-right-icon {
+  color: #ffffff;
+}
+
+@keyframes tierSubmenuFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* 二级抽屉中的单个档位项 */
+.model-tier-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: #e8eaed;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+  user-select: none;
+}
+
+.model-tier-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.model-tier-item.is-selected {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.model-tier-item.is-selected .model-item-check {
+  color: #ffffff;
+  margin-left: 12px;
 }
 
 .model-item-check {

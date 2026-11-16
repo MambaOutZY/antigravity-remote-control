@@ -769,7 +769,7 @@
             </div>
             <div class="model-popover-divider"></div>
             <!-- 查看额度入口项 (View Usage) -->
-            <button id="btn-toggle-usage-view" class="model-popover-item model-usage-trigger is-expanded" type="button" aria-haspopup="menu" aria-expanded="true">
+            <button id="btn-toggle-usage-view" class="model-popover-item model-usage-trigger" type="button" aria-haspopup="menu" aria-expanded="false">
               <div class="item-left">
                 <svg class="item-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
                   <path d="M2.5 13.5h11M3.5 10.5l2.5-3 3 2 3.5-5" />
@@ -782,8 +782,8 @@
             </button>
           </div>
 
-          <!-- 额度面板：Usage (双分组限额与绿色圆环进度) -->
-          <div id="model-popover-usage" class="model-popover-usage" role="menu" aria-label="额度与使用限制">
+          <!-- 额度面板：Usage (双分组限额与绿色圆环进度，默认收起对齐官方交互) -->
+          <div id="model-popover-usage" class="model-popover-usage" role="menu" aria-label="额度与使用限制" hidden>
             <div class="usage-popover-header">
               <span class="usage-popover-label">Usage</span>
               <button id="btn-refresh-usage" class="icon-btn-xs" type="button" title="刷新额度与使用限制" aria-label="刷新额度">
