@@ -971,15 +971,12 @@
   // --------------------------------------------------------------------------
 
   function getNormalizedModelList() {
-    const rawModels = state.models.length
+    const rawModels = (Array.isArray(state.models) && state.models.length > 0)
       ? state.models
       : [
           'gemini-3.8-flash-high',
           'gemini-3.8-flash-medium',
           'gemini-3.8-flash-low',
-          'gemini-4-argon',
-          'gemini-4-carbon',
-          'gemini-4-hydrogen',
           'claude-sonnet-4-6',
           'claude-opus-4-6-thinking',
           'gpt-oss-120b-medium'
@@ -988,7 +985,7 @@
 
     rawModels.forEach((m) => {
       const id = typeof m === 'string' ? m : (m.id || m.modelId || m.name || '');
-      if (!id) return;
+      if (!id || map.has(id)) return;
       const info = formatOfficialModel(id);
       const label = info.displayName || id;
       const defBudget = typeof m === 'object'
@@ -1000,7 +997,8 @@
     // 若配置文件存在未列在当前模型清单中的覆盖项，一并保留展示
     Object.keys(state.modelCtxOverrides || {}).forEach((id) => {
       if (!map.has(id)) {
-        map.set(id, { id, label: id, defaultBudget: DEFAULT_BUDGET });
+        const info = formatOfficialModel(id);
+        map.set(id, { id, label: info.displayName || id, defaultBudget: id.includes('gemini-4') ? 1048576 : DEFAULT_BUDGET });
       }
     });
 
@@ -2336,43 +2334,74 @@
   }
 
   /**
-   * 格式化官方模型显示名称、徽章与可用状态
+   * 格式化官方模型显示名称、徽章与可用状态（严格保留原始 rawId，按真实族系与档位生成唯一名称）
    */
   function formatOfficialModel(rawId) {
-    const id = String(rawId || '').toLowerCase().trim();
-    if (id.includes('gemini-3.8-flash-high') || id === 'gemini-3.8-flash-high') {
-      return { id: 'gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash High', badge: '', group: 'gemini', status: 'available' };
+    const raw = String(rawId || '').trim();
+    if (!raw) {
+      return { id: '', displayName: '默认模型', badge: '', group: 'gemini', status: 'available' };
     }
-    if (id.includes('gemini-3.8-flash-medium') || id === 'gemini-3.8-flash-medium') {
-      return { id: 'gemini-3.8-flash-medium', displayName: 'Gemini 3.8 Flash Medium', badge: '', group: 'gemini', status: 'available' };
+    const id = raw.toLowerCase();
+
+    // 1. 判断分组与角标（Claude 与 GPT 模型标记 Notice 徽章）
+    const isClaude = id.includes('claude');
+    const isGpt = id.includes('gpt') || id.includes('oss');
+    const group = (isClaude || isGpt) ? 'claude' : 'gemini';
+    const badge = (isClaude || isGpt) ? 'Notice' : '';
+
+    // 2. 提取档位后缀（如 -high, -medium, -low, -xhigh）
+    let tierText = '';
+    let base = raw;
+    const tierMatch = raw.match(/[-_](xhigh|high|medium|low)$/i);
+    if (tierMatch) {
+      const t = tierMatch[1].toLowerCase();
+      tierText = t === 'xhigh' ? 'X-High' : (t.charAt(0).toUpperCase() + t.slice(1));
+      base = raw.slice(0, tierMatch.index);
     }
-    if (id.includes('gemini-3.8-flash-low') || id === 'gemini-3.8-flash-low') {
-      return { id: 'gemini-3.8-flash-low', displayName: 'Gemini 3.8 Flash Low', badge: '', group: 'gemini', status: 'available' };
+
+    // 3. 根据核心族系美化基底名称
+    let prettyBase = '';
+    const baseLower = base.toLowerCase();
+
+    if (baseLower.includes('gemini-4-argon')) {
+      prettyBase = 'Gemini 4 Argon';
+    } else if (baseLower.includes('gemini-4-hydrogen')) {
+      prettyBase = 'Gemini 4 Hydrogen';
+    } else if (baseLower.includes('gemini-4-carbon')) {
+      prettyBase = 'Gemini 4 Carbon';
+    } else if (baseLower === 'gemini-4') {
+      prettyBase = 'Gemini 4';
+    } else if (baseLower.includes('gemini-3.8-flash')) {
+      prettyBase = 'Gemini 3.8 Flash';
+    } else if (baseLower.includes('gemini-pro-orchestrator')) {
+      prettyBase = 'Gemini Pro Orchestrator G1 Pro';
+    } else if (baseLower.includes('claude-opus-5-5') || baseLower.includes('claude-opus-5.5')) {
+      prettyBase = 'Claude Opus 5.5';
+    } else if (baseLower.includes('claude-sonnet-5-5') || baseLower.includes('claude-sonnet-5.5')) {
+      prettyBase = 'Claude Sonnet 5.5';
+    } else if (baseLower.includes('claude-opus-4-6') || baseLower === 'claude-opus-4-6-thinking') {
+      prettyBase = 'Claude Opus 4.6 (Thinking)';
+    } else if (baseLower.includes('claude-sonnet-4-6')) {
+      prettyBase = 'Claude Sonnet 4.6 (Thinking)';
+    } else if (baseLower.includes('gpt-oss-120b')) {
+      prettyBase = 'GPT-OSS 120B';
+    } else {
+      prettyBase = base.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
     }
-    if (id.includes('claude-sonnet-4-6') || id.includes('claude-sonnet')) {
-      return { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', badge: 'Notice', group: 'claude', status: 'available' };
+
+    // 组装最终展示名称：基底 + 档位（若基底尚未包含对应档位说明）
+    let displayName = prettyBase;
+    if (tierText && !prettyBase.includes(`(${tierText})`)) {
+      displayName = `${prettyBase} (${tierText})`;
     }
-    if (id.includes('claude-opus-4-6') || id.includes('claude-opus')) {
-      return { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', badge: 'Notice', group: 'claude', status: 'available' };
-    }
-    if (id.includes('gpt-oss-120b') || id.includes('gpt-oss')) {
-      return { id: 'gpt-oss-120b-medium', displayName: 'GPT-OSS 120B (Medium)', badge: 'Notice', group: 'claude', status: 'available' };
-    }
-    if (id.includes('gemini-4-carbon')) {
-      return { id: 'gemini-4-carbon', displayName: 'Gemini 4 Carbon', badge: '', group: 'gemini', status: 'available' };
-    }
-    if (id.includes('gemini-4-argon')) {
-      return { id: 'gemini-4-argon', displayName: 'Gemini 4 Argon', badge: '', group: 'gemini', status: 'available' };
-    }
-    if (id.includes('gemini-4-hydrogen')) {
-      return { id: 'gemini-4-hydrogen', displayName: 'Gemini 4 Hydrogen', badge: '', group: 'gemini', status: 'available' };
-    }
-    if (id === 'gemini-4' || id.startsWith('gemini-4')) {
-      return { id: 'gemini-4', displayName: 'Gemini 4', badge: '', group: 'gemini', status: 'available' };
-    }
-    // 兜底通用美化命名
-    const pretty = rawId.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-    return { id: rawId, displayName: pretty, badge: '', group: id.includes('claude') || id.includes('gpt') ? 'claude' : 'gemini', status: 'available' };
+
+    return {
+      id: raw, // 关键：严格保留真实模型 ID，供 agy --model 透传调用
+      displayName,
+      badge,
+      group,
+      status: 'available'
+    };
   }
 
   /** 全局额度数据状态缓存 */
@@ -2480,36 +2509,54 @@
   }
 
   /**
-   * 渲染官方 1:1 模型选择弹窗列表
+   * 渲染官方 1:1 模型选择弹窗列表（以当前账号真实 state.models 为唯一数据源，按族系/档位智能排序）
    */
   function renderModelSwitcherList() {
     const listEl = $('model-popover-list');
     if (!listEl) return;
 
-    const activeModelId = $('select-model')?.value || 'gemini-3.8-flash-high';
+    const activeModelId = $('select-model')?.value || localStorage.getItem('agy_model') || '';
 
-    // 官方标准展示模型项全集（全面支持 Gemini 4 与 Claude/GPT 自由切换）
-    const OFFICIAL_MENU_ITEMS = [
-      { id: 'gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash High', badge: '', status: 'available' },
-      { id: 'gemini-4-argon', displayName: 'Gemini 4 Argon', badge: '', status: 'available' },
-      { id: 'gemini-4-carbon', displayName: 'Gemini 4 Carbon', badge: '', status: 'available' },
-      { id: 'gemini-4-hydrogen', displayName: 'Gemini 4 Hydrogen', badge: '', status: 'available' },
-      { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', badge: 'Notice', status: 'available' },
-      { id: 'claude-opus-4-6-thinking', displayName: 'Claude Opus 4.6 (Thinking)', badge: 'Notice', status: 'available' },
-      { id: 'gpt-oss-120b-medium', displayName: 'GPT-OSS 120B (Medium)', badge: 'Notice', status: 'available' }
-    ];
+    // 数据源 100% 取自当前登录账号真实返回的 models，绝不硬编码假数据污染
+    const sourceModels = (Array.isArray(state.models) && state.models.length > 0)
+      ? state.models
+      : ['gemini-3.8-flash-high', 'claude-sonnet-4-6', 'claude-opus-4-6-thinking', 'gpt-oss-120b-medium'];
 
-    // 将后端返回的其它自定义可用模型（如 medium/low）也平滑整合
-    const knownIds = new Set(OFFICIAL_MENU_ITEMS.map((m) => m.id));
-    (state.models || []).forEach((m) => {
+    // 格式化并去重
+    const itemsMap = new Map();
+    sourceModels.forEach((m) => {
       const mid = typeof m === 'string' ? m : (m.id || m.modelId || m.name);
-      if (!knownIds.has(mid)) {
-        OFFICIAL_MENU_ITEMS.push(formatOfficialModel(mid));
-        knownIds.add(mid);
-      }
+      if (!mid || itemsMap.has(mid)) return;
+      itemsMap.set(mid, formatOfficialModel(mid));
     });
 
-    listEl.innerHTML = OFFICIAL_MENU_ITEMS.map((item) => {
+    const items = Array.from(itemsMap.values());
+
+    // 智能排序规则：Gemini 4 旗舰 > Gemini 3.8 Flash > Gemini Orchestrator > Claude Opus > Claude Sonnet > GPT/其它
+    const getSortWeight = (item) => {
+      const id = item.id.toLowerCase();
+      let familyRank = 90;
+      if (id.includes('gemini-4-argon')) familyRank = 10;
+      else if (id.includes('gemini-4-hydrogen')) familyRank = 15;
+      else if (id.includes('gemini-4')) familyRank = 18;
+      else if (id.includes('gemini-3.8-flash')) familyRank = 20;
+      else if (id.includes('gemini-pro')) familyRank = 30;
+      else if (id.includes('claude-opus')) familyRank = 40;
+      else if (id.includes('claude-sonnet')) familyRank = 50;
+      else if (id.includes('gpt') || id.includes('oss')) familyRank = 60;
+
+      let tierRank = 5;
+      if (id.includes('xhigh')) tierRank = 1;
+      else if (id.includes('high')) tierRank = 2;
+      else if (id.includes('medium')) tierRank = 3;
+      else if (id.includes('low')) tierRank = 4;
+
+      return familyRank * 10 + tierRank;
+    };
+
+    items.sort((a, b) => getSortWeight(a) - getSortWeight(b));
+
+    listEl.innerHTML = items.map((item) => {
       const isSelected = item.id === activeModelId;
       const isUnavailable = item.status === 'unavailable';
       const badgeHtml = item.badge === 'Notice'
@@ -2656,18 +2703,45 @@
   function populateControlSelects() {
     const modelSel = $('select-model');
     if (modelSel) {
-      const prev = modelSel.value || localStorage.getItem('agy_model') || 'gemini-3.8-flash-high';
-      const models = state.models.length ? state.models : ['gemini-3.8-flash-high', 'gemini-4-argon', 'claude-sonnet-4-6', 'claude-opus-4-6-thinking', 'gpt-oss-120b-medium'];
-      modelSel.innerHTML = models.map((m) => {
+      const prev = modelSel.value || localStorage.getItem('agy_model') || '';
+      const models = (Array.isArray(state.models) && state.models.length > 0)
+        ? state.models
+        : ['gemini-3.8-flash-high', 'claude-sonnet-4-6', 'claude-opus-4-6-thinking', 'gpt-oss-120b-medium'];
+
+      // 格式化并去重
+      const seen = new Set();
+      const validOptions = [];
+      models.forEach((m) => {
         const val = typeof m === 'string' ? m : (m.id || m.modelId || m.name);
+        if (!val || seen.has(val)) return;
+        seen.add(val);
         const info = formatOfficialModel(val);
-        return `<option value="${escapeHtml(val)}">${escapeHtml(info.displayName)}</option>`;
+        validOptions.push({ val, displayName: info.displayName });
+      });
+
+      modelSel.innerHTML = validOptions.map((o) => {
+        return `<option value="${escapeHtml(o.val)}">${escapeHtml(o.displayName)}</option>`;
       }).join('');
-      if (prev && Array.from(modelSel.options).some((o) => o.value === prev)) {
-        modelSel.value = prev;
+
+      // 选择优先逻辑：若 prev 存在且匹配则保留；若 prev 类似（如前缀匹配）则自动迁移；否则选中第 1 项
+      let chosen = '';
+      if (prev && seen.has(prev)) {
+        chosen = prev;
+      } else if (prev) {
+        const partial = validOptions.find((o) => o.val.startsWith(prev) || prev.startsWith(o.val));
+        if (partial) chosen = partial.val;
       }
+      if (!chosen && validOptions.length > 0) {
+        chosen = validOptions[0].val;
+      }
+
+      if (chosen) {
+        modelSel.value = chosen;
+        localStorage.setItem('agy_model', chosen);
+      }
+
       // 初始化输入框模型胶囊文字
-      const activeInfo = formatOfficialModel(modelSel.value || 'gemini-3.8-flash-high');
+      const activeInfo = formatOfficialModel(modelSel.value || chosen);
       if ($('model-picker-name')) $('model-picker-name').textContent = activeInfo.displayName;
       if ($('ctx-panel-model-pill')) $('ctx-panel-model-pill').textContent = activeInfo.displayName;
     }

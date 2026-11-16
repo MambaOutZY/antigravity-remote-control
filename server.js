@@ -504,8 +504,9 @@ function createAppServer(options = {}) {
         const agyStatus = resolveAgyBinary(getAgyBinOption());
         const meterOpts = getMeterOpts();
         const switchOpts = getSwitchOpts();
+        const activeAcc = switchBridge.listAccounts(switchOpts);
         const [models, convAudit, historyData, projectData, usageLimits] = await Promise.all([
-          getAvailableModels({ binPath: getAgyBinOption(), proxyOpts: switchOpts }),
+          getAvailableModels({ binPath: getAgyBinOption(), proxyOpts: switchOpts, activeEmail: activeAcc?.activeEmail }),
           Promise.resolve(meterEngine.listConversationsAndAudit(meterOpts)),
           Promise.resolve(meterEngine.getTokenHistoryDashboard({ ...meterOpts, sourceFilter: 'all' })),
           Promise.resolve(meterEngine.collectProjects(meterOpts)),
@@ -1057,9 +1058,10 @@ function createAppServer(options = {}) {
         try {
           const fetchModelsFn = runner.getAvailableModels || runner.listAvailableModels;
           const freshModels = await fetchModelsFn({
-            timeoutMs: 4000,
+            timeoutMs: 15000,
             binPath: getAgyBinOption(),
-            proxyOpts: getSwitchOpts()
+            proxyOpts: getSwitchOpts(),
+            activeEmail: result.email
           });
           if (Array.isArray(freshModels) && freshModels.length > 0) {
             result.models = freshModels;
