@@ -2585,6 +2585,68 @@ body.aux-collapsed .aux-pane {
   transform: none;
 }
 
+.composer-send-btn.is-queue-mode {
+  background: var(--accent-sky, #38bdf8);
+  color: #0b0f19;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.45);
+}
+
+.btn-warning-sm {
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.14s ease;
+}
+
+.btn-warning-sm:hover {
+  background: rgba(245, 158, 11, 0.28);
+  color: #fef3c7;
+}
+
+.msg-row.is-queued .msg-bubble {
+  background: rgba(56, 189, 248, 0.12) !important;
+  border: 1px dashed rgba(56, 189, 248, 0.5) !important;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.1);
+}
+
+.msg-queue-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(56, 189, 248, 0.16);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-sky, #38bdf8);
+}
+
+.msg-queue-cancel-btn {
+  border: none;
+  background: transparent;
+  color: #f87171;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.msg-queue-cancel-btn:hover {
+  background: rgba(239, 68, 68, 0.18);
+  text-decoration: underline;
+}
+
 /* ============================================================================
  * 官方 1:1 模型选择与额度浮层 (Model Switcher & View Usage Popover)
  * ============================================================================ */

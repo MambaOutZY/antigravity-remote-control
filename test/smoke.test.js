@@ -24,6 +24,7 @@ const { pathToFileURL } = require('node:url');
 const { createAppServer } = require('../server');
 const switchBridge = require('../lib/switch-bridge');
 const agyRunner = require('../lib/agy-runner');
+const meterEngine = require('../lib/meter-engine');
 
 // 合法的 1×1 像素透明 PNG (67 字节)
 const PNG_1X1_BASE64 =
@@ -1281,5 +1282,33 @@ describe('扩展能力：项目分组、目录浏览、账号切换与代理桥�
     assert.ok(html.includes('id="btn-toggle-usage-view"'), '应当包含 View Usage 入口项');
     assert.ok(html.includes('id="model-popover-usage"'), '应当包含 Usage 额度展示面板');
     assert.ok(html.includes('id="btn-mode-picker"'), '应当包含权限模式胶囊');
+  });
+
+  it('16. 会话标题样板词清洗、项目全量折叠/展开与执行中追加输入组件验证', async () => {
+    // 1. 验证 meterEngine.cleanUserPromptText 正确剥离各类包装样板词，恢复真实业务问题
+    const sampleBoilerplate1 = 'The following is a user request from the user:\n\n请帮我检查飞牛 NAS (192.168.1.20) 以及本机的计划任务配置';
+    const cleaned1 = meterEngine.cleanUserPromptText(sampleBoilerplate1);
+    assert.equal(cleaned1, '请帮我检查飞牛 NAS (192.168.1.20) 以及本机的计划任务配置');
+    assert.ok(!cleaned1.startsWith('The following is a'));
+
+    const sampleBoilerplate2 = '<identity>You are Antigravity...</identity>\n<USER_REQUEST>部署最新代码到生产环境并重启守护进程</USER_REQUEST>';
+    const cleaned2 = meterEngine.cleanUserPromptText(sampleBoilerplate2);
+    assert.equal(cleaned2, '部署最新代码到生产环境并重启守护进程');
+
+    const sampleBoilerplate3 = 'The following is a transcript of a conversation with the user: 查看磁盘剩余空间';
+    const cleaned3 = meterEngine.cleanUserPromptText(sampleBoilerplate3);
+    assert.equal(cleaned3, '查看磁盘剩余空间');
+
+    // 2. 验证前端 HTML 包含项目全部展开/折叠按钮、打断发送按钮与快捷键提示
+    const html = await (await fetch(`${baseUrl}/`)).text();
+    assert.ok(html.includes('id="btn-toggle-all-projects"'), '应当包含全部展开/折叠项目按钮');
+    assert.ok(html.includes('id="btn-interrupt-send"'), '应当包含打断并立即发送按钮');
+    assert.ok(html.includes('id="composer-shortcut-hint"'), '应当包含输入框动态快捷键提示');
+
+    // 3. 验证 public/index.html 与静态资源 0 外部 CDN 外链
+    const cdnPatterns = [/https?:\/\/(?:cdn\.)?jsdelivr\.net/i, /https?:\/\/unpkg\.com/i, /https?:\/\/cdnjs\.cloudflare\.com/i, /https?:\/\/fonts\.googleapis\.com/i, /https?:\/\/fonts\.gstatic\.com/i];
+    for (const pat of cdnPatterns) {
+      assert.ok(!pat.test(html), `index.html 不得包含外部 CDN: ${pat}`);
+    }
   });
 });

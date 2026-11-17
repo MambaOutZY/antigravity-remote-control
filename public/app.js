@@ -48,6 +48,9 @@
     messages: [],
     pendingAttachments: [],
     sessionSentAttachments: [],
+    activeStreams: new Map(), // 运行时活跃流映射：runId -> streamCtx
+    conversationQueues: new Map(), // 会话追加输入队列：convId -> [queuedTurns]
+    conversationMessagesCache: new Map(), // 会话消息缓存（供后台流与会话快速切换恢复）
     streaming: {
       active: false,
       runId: null,
@@ -86,7 +89,14 @@
     // 多标签面板、项目分组与目录选择器状态
     projects: [],
     activeProjectId: '',
-    collapsedProjects: {},
+    collapsedProjects: (() => {
+      try {
+        const s = localStorage.getItem('agy_collapsed_projects');
+        return s ? JSON.parse(s) : {};
+      } catch {
+        return {};
+      }
+    })(),
     expandedProjects: {},
     activeCtxTab: 'current',
     activeHistTab: 'heatmap',
@@ -3022,11 +3032,13 @@
         if (!hay.includes(kw)) return;
       }
       const ws = c.workspacePath || c.workspace || '';
-      // 仅匹配显式允许展示的项目（默认展示 /home/workspace 与手动新建项目，隐藏其它历史临时目录）
+      // 仅匹配显式允许展示的项目（默认展示核心工作区与手动新建项目，隐藏其它历史临时目录）
       const matchedProj = (state.projects || []).find((p) => {
         if (!p || !p.id) return false;
-        if (c.projectId && p.id === c.projectId) return true;
-        if (p.workspacePath && ws && (p.workspacePath === ws || p.workspacePath.toLowerCase() === ws.toLowerCase())) return true;
+        if (c.projectId && (p.id === c.projectId || p.id === `project-${c.projectId}`)) return true;
+        const pWs = (p.workspacePath || '').replace(/\\/g, '/').toLowerCase();
+        const cWs = ws.replace(/\\/g, '/').toLowerCase();
+        if (pWs && cWs && (pWs === cWs || pWs.endsWith(cWs) || cWs.endsWith(pWs))) return true;
         return false;
       });
       const key = matchedProj ? matchedProj.id : '__unassigned__';
@@ -3065,9 +3077,11 @@
       const isActiveProj = state.activeProjectId
         ? state.activeProjectId === g.id
         : Boolean(g.workspacePath && state.workspace && g.workspacePath === state.workspace);
-      const isCollapsed = Boolean(state.collapsedProjects[g.id]) && !kw;
+      const containsActive = g.convs.some((c) => c.id === state.activeConversationId);
+      // 包含当前会话的项目强制展开，其余由用户折叠偏好控制（默认展开）
+      const isCollapsed = Boolean(state.collapsedProjects[g.id]) && !kw && !containsActive;
       const activeIdx = g.convs.findIndex((c) => c.id === state.activeConversationId);
-      const isExpanded = Boolean(state.expandedProjects[g.id]) || Boolean(kw) || activeIdx >= DEFAULT_VISIBLE;
+      const isExpanded = Boolean(state.expandedProjects[g.id]) || Boolean(kw) || (containsActive && activeIdx >= DEFAULT_VISIBLE);
       const visibleConvs = isExpanded ? g.convs : g.convs.slice(0, DEFAULT_VISIBLE);
 
       let bodyHtml = '';
@@ -3080,8 +3094,10 @@
             const srcLabel = src === 'desktop' ? 'Desktop' : 'CLI';
             const pct = Math.max(0, Math.min(100, Math.round(Number(c.latestContext?.percent ?? 0))));
             const isActive = state.activeConversationId === c.id;
+            const stream = getActiveStreamForConv(c.id);
+            const isItemStreaming = Boolean(stream && stream.active);
             const hasErr = Boolean(c.latestContext?.errorKind && c.latestContext.errorKind !== 'none');
-            const dotCls = isActive ? ' is-active' : (hasErr ? ' is-error' : '');
+            const dotCls = isItemStreaming ? ' is-active pulse-dot' : (isActive ? ' is-active' : (hasErr ? ' is-error' : ''));
             const modelLabel = c.model || '默认模型';
             const relTime = formatRelativeCompact(c.updatedAt) || formatTimeShort(c.updatedAt);
             const isMenuOpen = state.contextMenuConvId === c.id;
@@ -3187,7 +3203,14 @@
       if (conv.unread) {
         patchConversationPref(conv.id || convId, { unread: false }, '', true);
       }
-      if (conv.projectId) state.activeProjectId = conv.projectId;
+      if (conv.projectId) {
+        state.activeProjectId = conv.projectId;
+        // 关键体验优化：当前选中的会话所属项目自动展开，并持久化到 localStorage
+        state.collapsedProjects[conv.projectId] = false;
+        try {
+          localStorage.setItem('agy_collapsed_projects', JSON.stringify(state.collapsedProjects));
+        } catch {}
+      }
       if (!state.workspace && (conv.workspacePath || conv.workspace)) {
         state.workspace = conv.workspacePath || conv.workspace;
         if ($('workspace-input')) $('workspace-input').value = state.workspace;
@@ -3204,6 +3227,29 @@
 
       // 将历史消息归一化为前端展示结构
       state.messages = normalizeHistoryMessages(conv.messages || []);
+
+      // 关键改进：合入当前可能正在后台流式生成的助手卡片与排队中的追加指令
+      const activeStream = getActiveStreamForConv(conv.id || convId);
+      if (activeStream && activeStream.assistantMsg) {
+        const alreadyHas = state.messages.some((m) => m.id === activeStream.assistantMsg.id);
+        if (!alreadyHas) {
+          state.messages.push(activeStream.assistantMsg);
+        }
+      }
+      const queuedTurns = state.conversationQueues.get(conv.id || convId) || [];
+      queuedTurns.forEach((q) => {
+        if (!state.messages.some((m) => m.id === q.queuedMsgId)) {
+          state.messages.push({
+            id: q.queuedMsgId,
+            role: 'user',
+            text: q.prompt || '（请查看附件图片）',
+            attachments: q.attachments || [],
+            isQueued: true,
+            timestamp: new Date().toISOString()
+          });
+        }
+      });
+
       if (conv.latest?.speed) {
         const lastAi = [...state.messages].reverse().find((m) => m.role === 'assistant');
         if (lastAi && !lastAi.metrics) {
@@ -3224,6 +3270,7 @@
       renderSidePanel();
       updateCliPreview();
       closeMobileDrawers();
+      setStreamingUiState(); // 同步更新执行/排队状态UI
     } catch (err) {
       showToast(`加载会话详情失败：${err.message}`, true);
     }
@@ -3316,6 +3363,7 @@
     renderSidePanel();
     updateCliPreview();
     closeMobileDrawers();
+    setStreamingUiState(false);
     $('prompt-input')?.focus();
   }
 
@@ -3330,6 +3378,9 @@
 
     state.activeProjectId = projId;
     state.collapsedProjects[projId] = false;
+    try {
+      localStorage.setItem('agy_collapsed_projects', JSON.stringify(state.collapsedProjects));
+    } catch {}
 
     if (nextWs) {
       state.workspace = nextWs;
@@ -3562,7 +3613,7 @@
   /** 构建单条消息 DOM 节点 */
   function createMessageElement(msg) {
     const row = document.createElement('div');
-    row.className = `msg-row is-${msg.role}`;
+    row.className = `msg-row is-${msg.role}${msg.isQueued ? ' is-queued' : ''}`;
     row.dataset.msgId = msg.id;
 
     const roleNames = {
@@ -3582,6 +3633,14 @@
 
     const bubble = document.createElement('div');
     bubble.className = 'msg-bubble';
+
+    // 若属于生成中追加的任务，在气泡顶部渲染排队状态胶囊与取消操作
+    if (msg.isQueued) {
+      const qBadge = document.createElement('div');
+      qBadge.className = 'msg-queue-badge';
+      qBadge.innerHTML = `<span>🕒 追加指令排队中（待当前任务完成后自动执行）</span><button class="msg-queue-cancel-btn" type="button" data-cancel-queued="${escapeHtml(msg.id)}">取消排队</button>`;
+      bubble.appendChild(qBadge);
+    }
 
     if (msg.role === 'user') {
       const contentDiv = document.createElement('div');
@@ -3720,42 +3779,235 @@
     listEl.scrollTop = listEl.scrollHeight;
   }
 
-  function setStreamingUiState(isActive) {
-    state.streaming.active = isActive;
-    const live = $('chat-live-indicator');
-    const stopBtn = $('btn-stop-stream');
-    const sendBtn = $('btn-send-prompt');
-    if (live) live.hidden = !isActive;
-    if (stopBtn) stopBtn.hidden = !isActive;
-    if (sendBtn) sendBtn.disabled = isActive;
+  /** 获取指定会话当前活跃的流任务 */
+  function getActiveStreamForConv(convId) {
+    if (!convId) {
+      for (const s of state.activeStreams.values()) {
+        if ((s.originConvId === null || !s.originConvId) && s.active) return s;
+      }
+      return null;
+    }
+    for (const s of state.activeStreams.values()) {
+      if ((s.boundConvId === convId || s.originConvId === convId) && s.active) return s;
+    }
+    return null;
   }
 
-  /** 发送提示词并启动 SSE 流式消费 */
-  async function handleSendPrompt() {
-    if (state.streaming.active) return;
+  function isConvStreaming(convId) {
+    return Boolean(getActiveStreamForConv(convId));
+  }
+
+  /** 取消排队等待中的用户追加任务 */
+  function cancelQueuedMessage(queuedMsgId) {
+    if (!queuedMsgId) return;
+    for (const [key, queue] of state.conversationQueues.entries()) {
+      const idx = queue.findIndex((item) => item.queuedMsgId === queuedMsgId || item.id === queuedMsgId);
+      if (idx !== -1) {
+        queue.splice(idx, 1);
+        if (!queue.length) state.conversationQueues.delete(key);
+      }
+    }
+    const msgIdx = state.messages.findIndex((m) => m.id === queuedMsgId);
+    if (msgIdx !== -1) {
+      state.messages.splice(msgIdx, 1);
+    }
+    const row = document.querySelector(`[data-msg-id="${CSS.escape(queuedMsgId)}"]`);
+    if (row) row.remove();
+    showToast('已取消排队的追加任务');
+  }
+
+  /** 全部展开或折叠左侧所有项目文件夹 */
+  function toggleAllProjects() {
+    const projectIds = (state.projects || []).map((p) => p.id).concat('__unassigned__');
+    const allCollapsed = projectIds.every((pid) => Boolean(state.collapsedProjects[pid]));
+    const nextVal = !allCollapsed;
+    projectIds.forEach((pid) => {
+      state.collapsedProjects[pid] = nextVal;
+    });
+    try {
+      localStorage.setItem('agy_collapsed_projects', JSON.stringify(state.collapsedProjects));
+    } catch {}
+    renderConversationList();
+    showToast(nextVal ? '已全部折叠项目' : '已全部展开项目');
+  }
+
+  /**
+   * 更新当前生成状态下的输入区与全局按钮呈现
+   * 关键改进：执行任务时绝不禁用输入框，解除输入锁定，支持追加排队与快捷打断
+   */
+  function setStreamingUiState(isActive = null) {
+    const currentConvId = state.activeConversationId;
+    const activeStream = getActiveStreamForConv(currentConvId);
+    const streamingNow = isActive !== null ? isActive : Boolean(activeStream && activeStream.active);
+
+    state.streaming.active = streamingNow;
+    if (activeStream) {
+      state.streaming.runId = activeStream.runId;
+      state.streaming.abortController = activeStream.abortController;
+      state.streaming.assistantMsgId = activeStream.assistantMsgId;
+    } else if (!streamingNow) {
+      state.streaming.runId = null;
+      state.streaming.abortController = null;
+      state.streaming.assistantMsgId = null;
+    }
+
+    const live = $('chat-live-indicator');
+    const stopBtn = $('btn-stop-stream');
+    const interruptBtn = $('btn-interrupt-send');
+    const sendBtn = $('btn-send-prompt');
+    const hintEl = $('composer-shortcut-hint');
+
+    if (live) live.hidden = !streamingNow;
+    if (stopBtn) stopBtn.hidden = !streamingNow;
+    if (interruptBtn) interruptBtn.hidden = !streamingNow;
+
+    // 关键体验优化：生成中严禁禁用发送按钮，而是切换为「追加排队」视觉反馈
+    if (sendBtn) {
+      sendBtn.disabled = false;
+      if (streamingNow) {
+        sendBtn.classList.add('is-queue-mode');
+        sendBtn.title = '追加排队 (Enter 追加任务，当前任务完成后自动执行)';
+      } else {
+        sendBtn.classList.remove('is-queue-mode');
+        sendBtn.title = '发送指令 (Enter)';
+      }
+    }
+
+    if (hintEl) {
+      hintEl.textContent = streamingNow
+        ? 'Enter 追加排队 · Ctrl+Enter 打断并执行 · Shift+Enter 换行'
+        : 'Enter 发送 · Shift+Enter 换行';
+    }
+  }
+
+  /** 发送提示词：支持即时发送、任务执行中追加排队、或打断并立即执行 */
+  async function handleSendPrompt(options = {}) {
     const input = $('prompt-input');
-    const promptText = (input?.value || '').trim();
-    if (!promptText && !state.pendingAttachments.length) {
+    const promptText = (typeof options.prompt === 'string' ? options.prompt : (input?.value || '')).trim();
+    const attachmentsToSend = options.attachments || state.pendingAttachments.slice();
+
+    if (!promptText && !attachmentsToSend.length) {
       showToast('请输入内容或上传截图后再发送', true);
       return;
     }
 
-    const attachmentsToSend = state.pendingAttachments.slice();
-    const model = $('select-model')?.value || '';
-    const effort = $('select-effort')?.value ?? '';
-    const mode = $('select-mode')?.value || 'auto';
-    const skipPermissions = Boolean($('chk-skip-permissions')?.checked);
+    const model = options.model || $('select-model')?.value || '';
+    const effort = options.effort ?? $('select-effort')?.value ?? '';
+    const mode = options.mode || $('select-mode')?.value || 'auto';
+    const skipPermissions = options.skipPermissions !== undefined
+      ? options.skipPermissions
+      : Boolean($('chk-skip-permissions')?.checked);
 
     localStorage.setItem('agy_model', model);
 
-    // 1. 乐观插入用户消息和助手流式占位卡片
-    const userMsg = {
-      id: `u-${Date.now()}`,
-      role: 'user',
-      text: promptText || '（请查看附件图片）',
+    const currentConvId = state.activeConversationId;
+    const activeStream = getActiveStreamForConv(currentConvId);
+
+    // 1. 若当前会话正在执行且未强制打断 -> 进入「追加排队模式」
+    if (activeStream && activeStream.active && !options.forceSend) {
+      const queuedMsgId = `u-q-${Date.now()}`;
+      const queuedUserMsg = {
+        id: queuedMsgId,
+        role: 'user',
+        text: promptText || '（请查看附件图片）',
+        attachments: attachmentsToSend,
+        isQueued: true,
+        timestamp: new Date().toISOString()
+      };
+      state.messages.push(queuedUserMsg);
+      state.sessionSentAttachments.push(...attachmentsToSend);
+      state.pendingAttachments = [];
+      renderAttachmentPreviews();
+
+      if (input) {
+        input.value = '';
+        autoResizeTextarea(input);
+      }
+
+      const listEl = $('message-list');
+      if (listEl) {
+        listEl.appendChild(createMessageElement(queuedUserMsg));
+        scrollMessagesToBottom();
+      }
+
+      const qKey = currentConvId || '__new__';
+      if (!state.conversationQueues.has(qKey)) {
+        state.conversationQueues.set(qKey, []);
+      }
+      state.conversationQueues.get(qKey).push({
+        queuedMsgId,
+        prompt: promptText,
+        attachments: attachmentsToSend,
+        model,
+        effort,
+        mode,
+        skipPermissions
+      });
+
+      setStreamingUiState();
+      showToast('任务正在执行中，已加入追加队列（当前轮次完成后将自动发送）');
+      return;
+    }
+
+    // 2. 若用户触发「打断并立即发送」，先优雅中止当前正在执行的流
+    if (options.forceSend && activeStream) {
+      await stopActiveStream(currentConvId);
+    }
+
+    state.pendingAttachments = [];
+    renderAttachmentPreviews();
+    if (input) {
+      input.value = '';
+      autoResizeTextarea(input);
+    }
+
+    // 3. 正常发起执行流
+    await executeTurn({
+      prompt: promptText,
       attachments: attachmentsToSend,
-      timestamp: new Date().toISOString()
-    };
+      targetConvId: currentConvId,
+      model,
+      effort,
+      mode,
+      skipPermissions
+    });
+  }
+
+  /**
+   * 执行单轮流式生成任务（核心隔离执行器：实现多会话完全独立、跨会话不串流）
+   */
+  async function executeTurn(params) {
+    const {
+      prompt,
+      attachments = [],
+      targetConvId = state.activeConversationId,
+      model = $('select-model')?.value || '',
+      effort = $('select-effort')?.value ?? '',
+      mode = $('select-mode')?.value || 'auto',
+      skipPermissions = Boolean($('chk-skip-permissions')?.checked),
+      hasExistingUserMsg = false
+    } = params;
+
+    const isCurrentView = (
+      (state.activeConversationId && state.activeConversationId === targetConvId) ||
+      (!state.activeConversationId && !targetConvId)
+    );
+
+    let userMsg = null;
+    if (!hasExistingUserMsg) {
+      userMsg = {
+        id: `u-${Date.now()}`,
+        role: 'user',
+        text: prompt || '（请查看附件图片）',
+        attachments,
+        timestamp: new Date().toISOString()
+      };
+      if (isCurrentView) {
+        state.messages.push(userMsg);
+        state.sessionSentAttachments.push(...attachments);
+      }
+    }
+
     const assistantMsg = {
       id: `a-${Date.now() + 1}`,
       role: 'assistant',
@@ -3766,32 +4018,41 @@
       timestamp: new Date().toISOString()
     };
 
-    state.messages.push(userMsg, assistantMsg);
-    state.sessionSentAttachments.push(...attachmentsToSend);
-    state.pendingAttachments = [];
-    renderAttachmentPreviews();
-
-    if (input) {
-      input.value = '';
-      autoResizeTextarea(input);
+    let assistantRow = null;
+    const listEl = $('message-list');
+    if (isCurrentView) {
+      state.messages.push(assistantMsg);
+      const welcome = $('welcome-view');
+      if (welcome) welcome.hidden = true;
+      if (userMsg && listEl) listEl.appendChild(createMessageElement(userMsg));
+      if (listEl) {
+        assistantRow = createMessageElement(assistantMsg);
+        listEl.appendChild(assistantRow);
+        scrollMessagesToBottom();
+      }
     }
 
-    const welcome = $('welcome-view');
-    if (welcome) welcome.hidden = true;
-    const listEl = $('message-list');
-    listEl.appendChild(createMessageElement(userMsg));
-    const assistantRow = createMessageElement(assistantMsg);
-    listEl.appendChild(assistantRow);
-    scrollMessagesToBottom();
-
+    const runId = `run-${Date.now()}`;
     const abortController = new AbortController();
-    state.streaming.abortController = abortController;
-    state.streaming.assistantMsgId = assistantMsg.id;
-    state.streaming.runId = `run-${Date.now()}`;
-    setStreamingUiState(true);
-    renderContextView();
-    renderSidePanel();
-    updateCliPreview();
+    const streamCtx = {
+      runId,
+      targetConvId,
+      originConvId: targetConvId,
+      boundConvId: targetConvId,
+      assistantMsg,
+      assistantRow,
+      abortController,
+      active: true
+    };
+    state.activeStreams.set(runId, streamCtx);
+
+    if (isCurrentView) {
+      setStreamingUiState(true);
+      renderContextView();
+      renderSidePanel();
+      updateCliPreview();
+    }
+    renderConversationList();
 
     try {
       const res = await fetch('/api/chat/stream', {
@@ -3800,10 +4061,10 @@
         headers: { 'Content-Type': 'application/json' },
         signal: abortController.signal,
         body: JSON.stringify({
-          runId: state.streaming.runId,
-          prompt: promptText,
-          attachments: attachmentsToSend,
-          conversationId: state.activeConversationId,
+          runId,
+          prompt,
+          attachments,
+          conversationId: targetConvId,
           workspace: state.workspace,
           model,
           effort,
@@ -3823,7 +4084,7 @@
         throw new Error(errBody || `流式请求失败 (${res.status})`);
       }
 
-      await consumeSseStream(res.body, assistantMsg, assistantRow.querySelector('.msg-bubble'));
+      await consumeSseStream(res.body, streamCtx);
     } catch (err) {
       if (err.name === 'AbortError') {
         assistantMsg.text += (assistantMsg.text ? '\n\n' : '') + '> [已由用户停止生成]';
@@ -3831,20 +4092,64 @@
         assistantMsg.text += (assistantMsg.text ? '\n\n' : '') + `> **请求异常**：${err.message}`;
         showToast(err.message, true);
       }
-      updateAssistantBubbleDom(assistantRow.querySelector('.msg-bubble'), assistantMsg);
+      const bubbleEl = streamCtx.assistantRow?.querySelector('.msg-bubble');
+      if (bubbleEl) updateAssistantBubbleDom(bubbleEl, assistantMsg);
     } finally {
-      state.streaming.abortController = null;
-      state.streaming.runId = null;
-      state.streaming.assistantMsgId = null;
-      setStreamingUiState(false);
-      renderContextView();
+      streamCtx.active = false;
+      state.activeStreams.delete(runId);
+      const isNowViewing = (
+        (state.activeConversationId && (state.activeConversationId === streamCtx.boundConvId || state.activeConversationId === streamCtx.originConvId)) ||
+        (!state.activeConversationId && streamCtx.originConvId === null)
+      );
+      if (isNowViewing) {
+        setStreamingUiState(false);
+        renderContextView();
+      }
+      renderConversationList();
       refreshConversations();
       loadWorkspaceOverview();
+
+      // 关键：轮次完成后自动出队执行下一条追加排队任务！
+      checkAndDispatchNextQueuedTurn(streamCtx.boundConvId || streamCtx.targetConvId);
     }
   }
 
-  /** 使用 ReadableStream 解析 SSE `event:` 与 `data:` 帧 */
-  async function consumeSseStream(readableStream, assistantMsg, bubbleEl) {
+  /** 检查并自动出队执行指定会话排队中的下一轮任务 */
+  function checkAndDispatchNextQueuedTurn(convId) {
+    const qKey = convId || '__new__';
+    const queue = state.conversationQueues.get(qKey);
+    if (!queue || !queue.length) return;
+    const nextTurn = queue.shift();
+    if (!queue.length) state.conversationQueues.delete(qKey);
+    if (!nextTurn) return;
+
+    // 若当前正在查看该会话，把排队卡片的等待角标移除
+    if (state.activeConversationId === convId || (!state.activeConversationId && convId === '__new__')) {
+      const row = document.querySelector(`[data-msg-id="${CSS.escape(nextTurn.queuedMsgId)}"]`);
+      if (row) {
+        row.classList.remove('is-queued');
+        const badge = row.querySelector('.msg-queue-badge');
+        if (badge) badge.remove();
+      }
+      const mObj = state.messages.find((m) => m.id === nextTurn.queuedMsgId);
+      if (mObj) mObj.isQueued = false;
+    }
+
+    // 触发下一轮无缝续聊执行
+    executeTurn({
+      prompt: nextTurn.prompt,
+      attachments: nextTurn.attachments,
+      targetConvId: convId === '__new__' ? null : convId,
+      model: nextTurn.model,
+      effort: nextTurn.effort,
+      mode: nextTurn.mode,
+      skipPermissions: nextTurn.skipPermissions,
+      hasExistingUserMsg: true
+    });
+  }
+
+  /** 使用 ReadableStream 解析 SSE `event:` 与 `data:` 帧（支持会话隔离与后台执行） */
+  async function consumeSseStream(readableStream, streamCtx) {
     const reader = readableStream.getReader();
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
@@ -3855,8 +4160,18 @@
       rafPending = true;
       requestAnimationFrame(() => {
         rafPending = false;
-        updateAssistantBubbleDom(bubbleEl, assistantMsg);
-        scrollMessagesToBottom();
+        // 关键安全校验：仅当用户当前正在浏览此流所属的会话时，才重绘当前活动 DOM，防止跨会话串流
+        const isViewing = (
+          (state.activeConversationId && (state.activeConversationId === streamCtx.boundConvId || state.activeConversationId === streamCtx.originConvId)) ||
+          (!state.activeConversationId && streamCtx.originConvId === null)
+        );
+        if (isViewing) {
+          const bubbleEl = streamCtx.assistantRow?.querySelector('.msg-bubble');
+          if (bubbleEl) {
+            updateAssistantBubbleDom(bubbleEl, streamCtx.assistantMsg);
+            scrollMessagesToBottom();
+          }
+        }
       });
     };
 
@@ -3881,7 +4196,7 @@
       } catch {
         payload = { text: rawData };
       }
-      handleSseEvent(eventType, payload, assistantMsg);
+      handleSseEvent(eventType, payload, streamCtx);
       scheduleRender();
     };
 
@@ -3896,20 +4211,41 @@
     }
     if (buffer.trim()) dispatchFrame(buffer);
 
-    updateAssistantBubbleDom(bubbleEl, assistantMsg);
-    scrollMessagesToBottom();
+    const isViewing = (
+      (state.activeConversationId && (state.activeConversationId === streamCtx.boundConvId || state.activeConversationId === streamCtx.originConvId)) ||
+      (!state.activeConversationId && streamCtx.originConvId === null)
+    );
+    if (isViewing) {
+      const bubbleEl = streamCtx.assistantRow?.querySelector('.msg-bubble');
+      if (bubbleEl) {
+        updateAssistantBubbleDom(bubbleEl, streamCtx.assistantMsg);
+        scrollMessagesToBottom();
+      }
+    }
   }
 
-  /** 处理单个 SSE 事件并同步更新消息和顶栏胶囊指标 */
-  function handleSseEvent(eventType, payload, assistantMsg) {
+  /** 处理单个 SSE 事件并同步更新消息和顶栏胶囊指标（带会话视图安全校验） */
+  function handleSseEvent(eventType, payload, streamCtx) {
     const type = payload.type || eventType;
+    const assistantMsg = streamCtx.assistantMsg;
 
     if (type === 'status') {
-      if (payload.runId) state.streaming.runId = payload.runId;
+      if (payload.runId) streamCtx.runId = payload.runId;
       if (payload.conversationId) {
-        state.activeConversationId = payload.conversationId;
-        renderChatHeader();
-        updateCliPreview();
+        streamCtx.boundConvId = payload.conversationId;
+        if (!streamCtx.originConvId) streamCtx.originConvId = payload.conversationId;
+
+        // 核心安全隔离：只有用户当前正在查看此流（或处于发起该新建会话的当前界面）时，才同步活动会话 ID！
+        const isCurrentView = (
+          (state.activeConversationId && (state.activeConversationId === streamCtx.boundConvId || state.activeConversationId === streamCtx.originConvId)) ||
+          (!state.activeConversationId && streamCtx.originConvId === payload.conversationId) ||
+          (!state.activeConversationId && streamCtx.targetConvId === null)
+        );
+        if (isCurrentView) {
+          state.activeConversationId = payload.conversationId;
+          renderChatHeader();
+          updateCliPreview();
+        }
       }
       return;
     }
@@ -3955,16 +4291,23 @@
       const totalUsed = u.totalTokens ?? u.actual ?? ((u.inputTokens || 0) + (u.cacheReadTokens || 0) + (u.outputTokens || 0));
 
       assistantMsg.metrics = { tps, ttft, duration, outputTokens };
-      if (tps != null) state.contextMetrics.tps = tps;
-      if (ttft != null) state.contextMetrics.ttft = ttft;
-      if (duration != null) state.contextMetrics.duration = duration;
-      if (outputTokens != null) state.contextMetrics.outputTokens = outputTokens;
-      if (totalUsed > 0) {
-        state.contextMetrics.actual = totalUsed;
-        state.contextMetrics.used = totalUsed;
-        state.contextMetrics.percent = (totalUsed / (state.contextMetrics.budget || DEFAULT_BUDGET)) * 100;
+
+      const isCurrentView = (
+        (state.activeConversationId && (state.activeConversationId === streamCtx.boundConvId || state.activeConversationId === streamCtx.originConvId)) ||
+        (!state.activeConversationId && streamCtx.originConvId === null)
+      );
+      if (isCurrentView) {
+        if (tps != null) state.contextMetrics.tps = tps;
+        if (ttft != null) state.contextMetrics.ttft = ttft;
+        if (duration != null) state.contextMetrics.duration = duration;
+        if (outputTokens != null) state.contextMetrics.outputTokens = outputTokens;
+        if (totalUsed > 0) {
+          state.contextMetrics.actual = totalUsed;
+          state.contextMetrics.used = totalUsed;
+          state.contextMetrics.percent = (totalUsed / (state.contextMetrics.budget || DEFAULT_BUDGET)) * 100;
+        }
+        renderContextView();
       }
-      renderContextView();
       return;
     }
 
@@ -3976,26 +4319,43 @@
         detail: payload.message || payload.error || '执行出错',
         diagnostic: payload.diagnostic || ''
       };
-      state.contextMetrics.errorClassification = cls;
       assistantMsg.text += (assistantMsg.text ? '\n\n' : '') + `> **错误 (${cls.title || cls.badgeText})**：${cls.detail || payload.message || ''}`;
-      renderContextView();
+
+      const isCurrentView = (
+        (state.activeConversationId && (state.activeConversationId === streamCtx.boundConvId || state.activeConversationId === streamCtx.originConvId)) ||
+        (!state.activeConversationId && streamCtx.originConvId === null)
+      );
+      if (isCurrentView) {
+        state.contextMetrics.errorClassification = cls;
+        renderContextView();
+      }
       return;
     }
 
     if (type === 'done') {
       if (payload.conversationId) {
-        state.activeConversationId = payload.conversationId;
-        renderChatHeader();
-        updateCliPreview();
-        apiFetch(`/api/conversations/${encodeURIComponent(payload.conversationId)}`)
-          .then((res) => {
-            const conv = res?.conversation || res;
-            if (conv && state.activeConversationId === (conv.id || payload.conversationId)) {
-              syncContextMetricsFromConversation(conv);
-              renderContextView();
-            }
-          })
-          .catch(() => {});
+        streamCtx.boundConvId = payload.conversationId;
+        if (!streamCtx.originConvId) streamCtx.originConvId = payload.conversationId;
+
+        // 只有当前用户正在查看该流所属会话时才同步视图，绝不篡改用户正在看的新建会话或另一个会话！
+        const isCurrentView = (
+          (state.activeConversationId && (state.activeConversationId === streamCtx.boundConvId || state.activeConversationId === streamCtx.originConvId)) ||
+          (!state.activeConversationId && streamCtx.targetConvId === null)
+        );
+        if (isCurrentView) {
+          state.activeConversationId = payload.conversationId;
+          renderChatHeader();
+          updateCliPreview();
+          apiFetch(`/api/conversations/${encodeURIComponent(payload.conversationId)}`)
+            .then((res) => {
+              const conv = res?.conversation || res;
+              if (conv && state.activeConversationId === (conv.id || payload.conversationId)) {
+                syncContextMetricsFromConversation(conv);
+                renderContextView();
+              }
+            })
+            .catch(() => {});
+        }
       }
       const u = payload.usage || {};
       const outTok = payload.outputTokens ?? u.outputTokens ?? u.output ?? assistantMsg.metrics?.outputTokens ?? state.contextMetrics.outputTokens;
@@ -4011,26 +4371,34 @@
       assistantMsg.toolCalls.forEach((tc) => {
         if (tc.status === 'running') tc.status = 'done';
       });
-      if (assistantMsg.metrics.tps != null) state.contextMetrics.tps = assistantMsg.metrics.tps;
-      if (assistantMsg.metrics.ttft != null) state.contextMetrics.ttft = assistantMsg.metrics.ttft;
-      if (assistantMsg.metrics.duration != null) state.contextMetrics.duration = assistantMsg.metrics.duration;
-      if (outTok != null) state.contextMetrics.outputTokens = outTok;
-      if (totalUsed > 0) {
-        state.contextMetrics.actual = totalUsed;
-        state.contextMetrics.used = totalUsed;
-        state.contextMetrics.percent = (totalUsed / (state.contextMetrics.budget || DEFAULT_BUDGET)) * 100;
+
+      const isCurrentView = (
+        (state.activeConversationId && (state.activeConversationId === streamCtx.boundConvId || state.activeConversationId === streamCtx.originConvId)) ||
+        (!state.activeConversationId && streamCtx.originConvId === null)
+      );
+      if (isCurrentView) {
+        if (assistantMsg.metrics.tps != null) state.contextMetrics.tps = assistantMsg.metrics.tps;
+        if (assistantMsg.metrics.ttft != null) state.contextMetrics.ttft = assistantMsg.metrics.ttft;
+        if (assistantMsg.metrics.duration != null) state.contextMetrics.duration = assistantMsg.metrics.duration;
+        if (outTok != null) state.contextMetrics.outputTokens = outTok;
+        if (totalUsed > 0) {
+          state.contextMetrics.actual = totalUsed;
+          state.contextMetrics.used = totalUsed;
+          state.contextMetrics.percent = (totalUsed / (state.contextMetrics.budget || DEFAULT_BUDGET)) * 100;
+        }
+        renderContextView();
       }
-      renderContextView();
     }
   }
 
-  /** 主动终止当前 SSE 流及后端子进程 */
-  async function stopActiveStream() {
-    if (!state.streaming.active) return;
-    const runId = state.streaming.runId;
-    if (state.streaming.abortController) {
-      state.streaming.abortController.abort();
+  /** 主动终止指定会话的 SSE 流及后端子进程 */
+  async function stopActiveStream(convId = state.activeConversationId) {
+    const stream = getActiveStreamForConv(convId);
+    if (!stream || !stream.active) return;
+    if (stream.abortController) {
+      stream.abortController.abort();
     }
+    const runId = stream.runId;
     if (runId) {
       try {
         await apiFetch('/api/chat/stop', {
@@ -4040,6 +4408,11 @@
       } catch {
         // 停止接口容错
       }
+    }
+    stream.active = false;
+    state.activeStreams.delete(runId);
+    if (state.activeConversationId === convId) {
+      setStreamingUiState(false);
     }
   }
 
@@ -4676,6 +5049,7 @@
     $('btn-browse-workspace')?.addEventListener('click', () => openDirPicker('workspace', $('workspace-input')?.value || state.workspace));
     $('btn-add-project')?.addEventListener('click', () => openDirPicker('project', state.workspace));
     $('btn-refresh-projects')?.addEventListener('click', refreshProjects);
+    $('btn-toggle-all-projects')?.addEventListener('click', toggleAllProjects);
     $('active-project-breadcrumb')?.addEventListener('click', () => openDirPicker('project', state.workspace));
     $('workspace-input')?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') switchWorkspace();
@@ -4716,6 +5090,9 @@
         e.stopPropagation();
         const pid = toggleBtn.dataset.projectToggle;
         state.collapsedProjects[pid] = !state.collapsedProjects[pid];
+        try {
+          localStorage.setItem('agy_collapsed_projects', JSON.stringify(state.collapsedProjects));
+        } catch {}
         renderConversationList();
         return;
       }
@@ -4734,7 +5111,12 @@
       }
       const projSelect = e.target.closest('[data-project-select]');
       if (projSelect) {
-        selectProjectById(projSelect.dataset.projectSelect, false);
+        const pid = projSelect.dataset.projectSelect;
+        state.collapsedProjects[pid] = !state.collapsedProjects[pid];
+        try {
+          localStorage.setItem('agy_collapsed_projects', JSON.stringify(state.collapsedProjects));
+        } catch {}
+        selectProjectById(pid, false);
         return;
       }
       const item = e.target.closest('[data-conv-id]');
@@ -4749,11 +5131,8 @@
       if (e.key === 'Escape' && state.contextMenuConvId) closeConvContextMenu();
     });
     $('btn-unbind-conv')?.addEventListener('click', () => {
-      state.activeConversationId = null;
-      renderConversationList();
-      renderChatHeader();
-      updateCliPreview();
-      showToast('已解除续聊绑定，下次发送将创建新会话');
+      startNewConversation();
+      showToast('已解除续聊绑定，已就绪新建会话');
     });
 
     // 目录选择器弹窗交互
@@ -4786,8 +5165,14 @@
       }
     });
 
-    // 中央画布事件委托：代码块复制、灯箱放大、欢迎快捷词
+    // 中央画布事件委托：代码块复制、灯箱放大、取消追加排队、欢迎快捷词
     $('message-list')?.addEventListener('click', async (e) => {
+      const cancelQueuedBtn = e.target.closest('[data-cancel-queued]');
+      if (cancelQueuedBtn) {
+        e.stopPropagation();
+        cancelQueuedMessage(cancelQueuedBtn.dataset.cancelQueued);
+        return;
+      }
       const copyBtn = e.target.closest('.code-copy-btn');
       if (copyBtn) {
         const ok = await copyText(copyBtn.dataset.copyCode || '');
@@ -4871,6 +5256,14 @@
         }
       }
 
+      // Ctrl+Enter 或 Cmd+Enter：打断当前正在执行的任务并立即发送
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        handleSendPrompt({ forceSend: true });
+        return;
+      }
+
+      // 普通 Enter：空闲时即时发送；任务执行中自动加入追加排队队列
       if (!e.shiftKey && !e.isComposing && e.keyCode !== 229 && e.key === 'Enter') {
         e.preventDefault();
         handleSendPrompt();
@@ -5005,8 +5398,9 @@
         updateCliPreview();
       });
     });
-    $('btn-send-prompt')?.addEventListener('click', handleSendPrompt);
-    $('btn-stop-stream')?.addEventListener('click', stopActiveStream);
+    $('btn-send-prompt')?.addEventListener('click', () => handleSendPrompt());
+    $('btn-interrupt-send')?.addEventListener('click', () => handleSendPrompt({ forceSend: true }));
+    $('btn-stop-stream')?.addEventListener('click', () => stopActiveStream());
 
     // 官方 Side Panel 手风琴分组展开/收起切换
     document.querySelectorAll('.side-sec-head').forEach((btn) => {
