@@ -4148,6 +4148,12 @@ body.aux-collapsed .aux-pane {
   color: var(--text-primary);
 }
 
+.icon-btn-xs.is-active {
+  background: var(--accent-subtle, rgba(168, 85, 247, 0.15));
+  border-color: var(--accent-primary, #a855f7);
+  color: var(--accent-primary, #c084fc);
+}
+
 .project-group {
   display: flex;
   flex-direction: column;

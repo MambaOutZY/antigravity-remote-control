@@ -1299,8 +1299,15 @@ describe('扩展能力：项目分组、目录浏览、账号切换与代理桥�
     const cleaned3 = meterEngine.cleanUserPromptText(sampleBoilerplate3);
     assert.equal(cleaned3, '查看磁盘剩余空间');
 
-    // 2. 验证前端 HTML 包含项目全部展开/折叠按钮、打断发送按钮与快捷键提示
+    const sampleBoilerplate4 = 'The following is a <SYSTEM_MESSAGE>alert</SYSTEM_MESSAGE> It is provided by the system: 为什么明明显示在workspace却进入未归类';
+    const cleaned4 = meterEngine.cleanUserPromptText(sampleBoilerplate4);
+    assert.equal(cleaned4, '为什么明明显示在workspace却进入未归类');
+    assert.ok(!cleaned4.includes('provided by the system'));
+    assert.ok(!cleaned4.includes('ided by the syste'));
+
+    // 2. 验证前端 HTML 包含项目双视图切换按钮、项目全部展开/折叠按钮、打断发送按钮与快捷键提示
     const html = await (await fetch(`${baseUrl}/`)).text();
+    assert.ok(html.includes('id="btn-toggle-project-view"'), '应当包含官方与工作区双视图切换按钮');
     assert.ok(html.includes('id="btn-toggle-all-projects"'), '应当包含全部展开/折叠项目按钮');
     assert.ok(html.includes('id="btn-interrupt-send"'), '应当包含打断并立即发送按钮');
     assert.ok(html.includes('id="composer-shortcut-hint"'), '应当包含输入框动态快捷键提示');

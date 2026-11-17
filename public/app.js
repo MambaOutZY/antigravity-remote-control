@@ -87,6 +87,7 @@
     activeAuxTab: 'git',
     auxCollapsed: localStorage.getItem('agy_aux_collapsed') === '1',
     // 多标签面板、项目分组与目录选择器状态
+    projectViewMode: localStorage.getItem('agy_project_view_mode') || 'official', // 'official': 官方单 CLI Project 视图；'workspace': 本地工作区树状视图
     projects: [],
     activeProjectId: '',
     collapsedProjects: (() => {
@@ -2309,6 +2310,7 @@
         if (matchedProj) state.activeProjectId = matchedProj.id;
       }
       renderConversationList();
+      updateProjectViewToggleBtn();
       renderChatHeader();
 
       if (data.commands) {
@@ -2974,6 +2976,7 @@
       const data = await apiFetch('/api/projects');
       if (Array.isArray(data.projects)) state.projects = data.projects;
       renderConversationList();
+      updateProjectViewToggleBtn();
       renderChatHeader();
     } catch (err) {
       showToast(`刷新项目列表失败：${err.message}`, true);
@@ -3000,6 +3003,31 @@
     }
   }
 
+  /**
+   * 切换项目分组视图模式：
+   * 'official' (默认)：100% 对齐官方 Google 远程控制页面，将所有 CLI 会话收拢在单一的「CLI Project」中，清爽无冗余未归类组
+   * 'workspace'：按本地工作区目录树状展示，无路径老会话归入默认折叠的「其他历史 / 未指定工作区」
+   */
+  function toggleProjectViewMode() {
+    state.projectViewMode = state.projectViewMode === 'official' ? 'workspace' : 'official';
+    try {
+      localStorage.setItem('agy_project_view_mode', state.projectViewMode);
+    } catch {}
+    updateProjectViewToggleBtn();
+    renderConversationList();
+    showToast(state.projectViewMode === 'official' ? '已切换为：官方单 CLI 项目视图' : '已切换为：本地工作区树状视图');
+  }
+
+  function updateProjectViewToggleBtn() {
+    const btn = $('btn-toggle-project-view');
+    if (!btn) return;
+    const isOfficial = state.projectViewMode === 'official';
+    btn.classList.toggle('is-active', isOfficial);
+    btn.title = isOfficial
+      ? '当前：官方单 CLI 项目视图 (点击切换为本地工作区树状视图)'
+      : '当前：本地工作区树状视图 (点击切换为官方单 CLI 项目视图)';
+  }
+
   /** 按项目分组渲染左侧历史会话列表（支持折叠展开、See all 与相对时间） */
   function renderConversationList() {
     const listEl = $('conversation-list');
@@ -3007,51 +3035,90 @@
 
     const kw = state.convSearch.trim().toLowerCase();
     const groupMap = new Map();
+    const isOfficialMode = state.projectViewMode === 'official';
 
-    // 先填入后端返回的已知项目（按路径去重），保证默认项目与自定义项目正常出现
-    const seenWsKeys = new Set();
-    (state.projects || []).forEach((p) => {
-      if (!p || !p.id) return;
-      const wsKey = (p.workspacePath || '').trim().toLowerCase();
-      if (wsKey && seenWsKeys.has(wsKey)) return;
-      if (wsKey) seenWsKeys.add(wsKey);
-      groupMap.set(p.id, {
-        id: p.id,
-        name: p.name || getPathBasename(p.workspacePath) || '未命名项目',
-        workspacePath: p.workspacePath || '',
+    if (isOfficialMode) {
+      // 官方单 CLI 项目模式：对齐 Google 官方控制台，默认只保留单个统一的 CLI Project 分组
+      groupMap.set('default-cli-project', {
+        id: 'default-cli-project',
+        name: 'CLI Project',
+        workspacePath: state.workspace || '',
         convs: []
       });
-    });
 
-    (state.conversations || []).forEach((c) => {
-      if (state.convFilter === 'active' && c.archived) return;
-      if (state.convFilter === 'unread' && (!c.unread || c.archived)) return;
-      if (state.convFilter === 'archived' && !c.archived) return;
-      if (kw) {
-        const hay = `${c.title || ''} ${c.model || ''} ${c.id || ''} ${c.projectName || ''}`.toLowerCase();
-        if (!hay.includes(kw)) return;
-      }
-      const ws = c.workspacePath || c.workspace || '';
-      // 仅匹配显式允许展示的项目（默认展示核心工作区与手动新建项目，隐藏其它历史临时目录）
-      const matchedProj = (state.projects || []).find((p) => {
-        if (!p || !p.id) return false;
-        if (c.projectId && (p.id === c.projectId || p.id === `project-${c.projectId}`)) return true;
-        const pWs = (p.workspacePath || '').replace(/\\/g, '/').toLowerCase();
-        const cWs = ws.replace(/\\/g, '/').toLowerCase();
-        if (pWs && cWs && (pWs === cWs || pWs.endsWith(cWs) || cWs.endsWith(pWs))) return true;
-        return false;
-      });
-      const key = matchedProj ? matchedProj.id : '__unassigned__';
-      if (!groupMap.has(key)) {
-        groupMap.set(key, {
-          id: key,
-          name: key === '__unassigned__' ? '未归类会话' : (c.projectName || getPathBasename(ws) || '未归类会话'),
-          workspacePath: ws,
+      // 仅保留用户显式手动新增的独立自定义项目（若有），其余全部收归 CLI Project
+      (state.projects || []).forEach((p) => {
+        if (!p || !p.id || p.id === 'default-cli-project') return;
+        if (p.name === 'CLI Project' || !p.custom) return;
+        groupMap.set(p.id, {
+          id: p.id,
+          name: p.name || getPathBasename(p.workspacePath) || '自定义项目',
+          workspacePath: p.workspacePath || '',
           convs: []
         });
-      }
-      groupMap.get(key).convs.push(c);
-    });
+      });
+
+      (state.conversations || []).forEach((c) => {
+        if (state.convFilter === 'active' && c.archived) return;
+        if (state.convFilter === 'unread' && (!c.unread || c.archived)) return;
+        if (state.convFilter === 'archived' && !c.archived) return;
+        if (kw) {
+          const hay = `${c.title || ''} ${c.model || ''} ${c.id || ''} ${c.projectName || ''}`.toLowerCase();
+          if (!hay.includes(kw)) return;
+        }
+
+        let targetGroupId = 'default-cli-project';
+        if (c.projectId && groupMap.has(c.projectId) && c.projectId !== 'default-cli-project') {
+          targetGroupId = c.projectId;
+        }
+        groupMap.get(targetGroupId).convs.push(c);
+      });
+    } else {
+      // 本地工作区树状视图：按真实 workspacePath 目录聚类
+      const seenWsKeys = new Set();
+      (state.projects || []).forEach((p) => {
+        if (!p || !p.id) return;
+        const wsKey = (p.workspacePath || '').trim().toLowerCase();
+        if (wsKey && seenWsKeys.has(wsKey)) return;
+        if (wsKey) seenWsKeys.add(wsKey);
+        groupMap.set(p.id, {
+          id: p.id,
+          name: p.name || getPathBasename(p.workspacePath) || '未命名项目',
+          workspacePath: p.workspacePath || '',
+          convs: []
+        });
+      });
+
+      (state.conversations || []).forEach((c) => {
+        if (state.convFilter === 'active' && c.archived) return;
+        if (state.convFilter === 'unread' && (!c.unread || c.archived)) return;
+        if (state.convFilter === 'archived' && !c.archived) return;
+        if (kw) {
+          const hay = `${c.title || ''} ${c.model || ''} ${c.id || ''} ${c.projectName || ''}`.toLowerCase();
+          if (!hay.includes(kw)) return;
+        }
+        const ws = c.workspacePath || c.workspace || '';
+        // 匹配已知项目目录
+        const matchedProj = (state.projects || []).find((p) => {
+          if (!p || !p.id) return false;
+          if (c.projectId && (p.id === c.projectId || p.id === `project-${c.projectId}`)) return true;
+          const pWs = (p.workspacePath || '').replace(/\\/g, '/').toLowerCase();
+          const cWs = ws.replace(/\\/g, '/').toLowerCase();
+          if (pWs && cWs && (pWs === cWs || pWs.endsWith(cWs) || cWs.endsWith(pWs))) return true;
+          return false;
+        });
+        const key = matchedProj ? matchedProj.id : '__unassigned__';
+        if (!groupMap.has(key)) {
+          groupMap.set(key, {
+            id: key,
+            name: key === '__unassigned__' ? '其他历史 / 未指定工作区' : (c.projectName || getPathBasename(ws) || '未命名工作区'),
+            workspacePath: ws,
+            convs: []
+          });
+        }
+        groupMap.get(key).convs.push(c);
+      });
+    }
 
     const groups = Array.from(groupMap.values()).filter((g) => {
       if (kw || state.convFilter !== 'active') {
@@ -3078,8 +3145,17 @@
         ? state.activeProjectId === g.id
         : Boolean(g.workspacePath && state.workspace && g.workspacePath === state.workspace);
       const containsActive = g.convs.some((c) => c.id === state.activeConversationId);
-      // 包含当前会话的项目强制展开，其余由用户折叠偏好控制（默认展开）
-      const isCollapsed = Boolean(state.collapsedProjects[g.id]) && !kw && !containsActive;
+      // 折叠状态判定：包含当前会话强制展开，搜索时强制展开；__unassigned__ 默认折叠
+      let isCollapsed = false;
+      if (kw || containsActive) {
+        isCollapsed = false;
+      } else if (state.collapsedProjects[g.id] !== undefined) {
+        isCollapsed = Boolean(state.collapsedProjects[g.id]);
+      } else if (g.id === '__unassigned__') {
+        isCollapsed = true; // 无目录历史会话默认折叠
+      } else {
+        isCollapsed = false; // 普通项目默认展开
+      }
       const activeIdx = g.convs.findIndex((c) => c.id === state.activeConversationId);
       const isExpanded = Boolean(state.expandedProjects[g.id]) || Boolean(kw) || (containsActive && activeIdx >= DEFAULT_VISIBLE);
       const visibleConvs = isExpanded ? g.convs : g.convs.slice(0, DEFAULT_VISIBLE);
@@ -3264,6 +3340,7 @@
       }
       syncContextMetricsFromConversation(conv);
       renderConversationList();
+      updateProjectViewToggleBtn();
       renderChatHeader();
       renderMessages();
       renderContextView();
@@ -3374,7 +3451,7 @@
       const ws = c.workspacePath || c.workspace || '';
       return (c.projectId || (ws ? `ws:${ws}` : '__unassigned__')) === projId;
     });
-    const nextWs = proj?.workspacePath || fallbackConv?.workspacePath || fallbackConv?.workspace || '';
+    const nextWs = proj?.workspacePath || fallbackConv?.workspacePath || fallbackConv?.workspace || (projId === 'default-cli-project' ? state.workspace : '');
 
     state.activeProjectId = projId;
     state.collapsedProjects[projId] = false;
@@ -5049,6 +5126,7 @@
     $('btn-browse-workspace')?.addEventListener('click', () => openDirPicker('workspace', $('workspace-input')?.value || state.workspace));
     $('btn-add-project')?.addEventListener('click', () => openDirPicker('project', state.workspace));
     $('btn-refresh-projects')?.addEventListener('click', refreshProjects);
+    $('btn-toggle-project-view')?.addEventListener('click', toggleProjectViewMode);
     $('btn-toggle-all-projects')?.addEventListener('click', toggleAllProjects);
     $('active-project-breadcrumb')?.addEventListener('click', () => openDirPicker('project', state.workspace));
     $('workspace-input')?.addEventListener('keydown', (e) => {

@@ -643,6 +643,7 @@ function createAppServer(options = {}) {
         }, 15000);
         if (keepAliveTimer.unref) keepAliveTimer.unref();
 
+        const effectiveWorkspace = body.workspace || getDefaultWorkspace();
         const runner = streamAgyTurn(
           {
             prompt,
@@ -650,7 +651,7 @@ function createAppServer(options = {}) {
             conversationId: body.conversationId,
             continueLast: Boolean(body.continueLast),
             project: body.project,
-            workspace: body.workspace || getDefaultWorkspace(),
+            workspace: effectiveWorkspace,
             model: body.model,
             effort: body.effort,
             mode: body.mode,
@@ -659,7 +660,21 @@ function createAppServer(options = {}) {
             binPath: getAgyBinOption(),
             proxyOpts: getSwitchOpts()
           },
-          (evt) => writeSseEvent(evt.type, evt)
+          (evt) => {
+            // 当 CLI 子进程吐出真实会话 ID 时，立即将有效工作区路径固化持久化到会话偏好表
+            if (evt.conversationId && effectiveWorkspace) {
+              try {
+                meterEngine.updateConversationPrefs(
+                  evt.conversationId,
+                  { workspacePath: effectiveWorkspace },
+                  getMeterOpts()
+                );
+              } catch {
+                // 忽略存储失败
+              }
+            }
+            writeSseEvent(evt.type, evt);
+          }
         );
 
         activeRuns.set(runId, runner);
